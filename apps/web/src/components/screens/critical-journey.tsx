@@ -1,0 +1,278 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+
+import { Button, Card, FieldError } from "@bigheadct/ui";
+import {
+  createContentAsset,
+  confirmArtifact,
+  createMessage,
+  createRoom,
+  createTask,
+  decideApproval,
+  initiateArtifact,
+  replaceTaskDependencies,
+  scheduleExperiment,
+  switchTenant,
+  type MutationResult
+} from "@/app/actions/critical-mutations";
+import type { WorkspaceSnapshot } from "@/lib/mock-workspace";
+import type { ScreenCode } from "@/lib/screen-catalog";
+import { mutationFailure } from "@/lib/mutation-result";
+import { beginWorkspaceMutation, endWorkspaceMutation } from "@/lib/mutation-refresh-coordinator";
+import { reconcileRealtimeMessages, type RealtimeMessage } from "@/lib/message-reconciliation";
+import { putSignedUploadWithRetry, sha256Hex } from "@/lib/signed-upload";
+import { allowedTaskTransitions } from "@/lib/task-transitions";
+import { transitionTask } from "@/lib/transition-task-client";
+import { visibleRoomsForMember } from "@/lib/room-visibility";
+import { createTimelineFixtures, VirtualTimeline } from "./virtual-timeline";
+
+const timelineFixtures = createTimelineFixtures(5_000);
+
+export const criticalJourneyCodes = new Set<ScreenCode>(["T05", "T10", "T11", "T13", "T15", "T16", "T21", "T44", "T47"]);
+
+type Action = (form: FormData) => Promise<MutationResult>;
+
+export function CriticalJourney({ code, snapshot }: { code: ScreenCode; snapshot: WorkspaceSnapshot }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [feedback, setFeedback] = useState<MutationResult | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [messages, setMessages] = useState(() => snapshot.messageOptions);
+  const [selectedRoomId, setSelectedRoomId] = useState(() => snapshot.roomOptions[0]?.id ?? "");
+
+  useEffect(() => {
+    setMessages((current) => reconcileRealtimeMessages(current, snapshot.messageOptions));
+  }, [snapshot.messageOptions]);
+
+  useEffect(() => {
+    if (code !== "T11" || !selectedRoomId || selectedRoomId.startsWith("fixture-")) return;
+    const controller = new AbortController();
+    void fetch(`/api/rooms/${encodeURIComponent(selectedRoomId)}/messages`, { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ messages: RealtimeMessage[] }> : Promise.reject(new Error(`HTTP ${response.status}`)))
+      .then((page) => setMessages((current) => reconcileRealtimeMessages(current, page.messages)))
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setFeedback(mutationFailure(503));
+      });
+    return () => controller.abort();
+  }, [code, selectedRoomId]);
+
+  const submit = (action: Action) => (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    beginWorkspaceMutation();
+    setPending(true);
+    void (async () => {
+      let shouldRefresh = false;
+      try {
+        const next = await action(form);
+        setFeedback(next);
+        if (next.ok) {
+          setIdempotencyKey(crypto.randomUUID());
+          shouldRefresh = true;
+        }
+      } finally {
+        setPending(false);
+        if (!endWorkspaceMutation(shouldRefresh) && shouldRefresh) {
+          setTimeout(() => router.refresh(), 0);
+        }
+      }
+    })();
+  };
+  const organizationId = snapshot.currentOrganizationId ?? snapshot.organizationOptions[0]?.id ?? "";
+  const visibleRooms = visibleRoomsForMember(snapshot.roomOptions);
+  const submitUpload = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const fileInput = event.currentTarget.elements.namedItem("file");
+    const file = fileInput instanceof HTMLInputElement ? fileInput.files?.[0] : undefined;
+    if (!file) { setFeedback({ ok: false, status: 422, message: "Selecione um arquivo." }); return; }
+    beginWorkspaceMutation();
+    setPending(true);
+    void (async () => {
+      let shouldRefresh = false;
+      try {
+        const checksum = await sha256Hex(file);
+        const metadata = new FormData();
+        metadata.set("organizationId", organizationId); metadata.set("filename", file.name);
+        metadata.set("mimeType", file.type || "application/octet-stream"); metadata.set("sizeBytes", String(file.size));
+        metadata.set("checksumSha256", checksum);
+        const initiated = await initiateArtifact(metadata);
+        if (!initiated.ok) { setFeedback(initiated); return; }
+        const artifactId = initiated.data?.artifactId;
+        const uploadUrl = initiated.data?.uploadUrl;
+        const rawHeaders = initiated.data?.requiredHeaders;
+        if (typeof artifactId !== "string" || typeof uploadUrl !== "string" || !rawHeaders || typeof rawHeaders !== "object" || Array.isArray(rawHeaders)) {
+          setFeedback(mutationFailure(502, "Resposta de assinatura invalida.")); return;
+        }
+        const requiredHeaders = Object.fromEntries(Object.entries(rawHeaders).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+        const storageFailure = await putSignedUploadWithRetry(uploadUrl, requiredHeaders, file);
+        if (storageFailure) { setFeedback(storageFailure); return; }
+        const confirmation = new FormData();
+        confirmation.set("organizationId", organizationId); confirmation.set("artifactId", artifactId); confirmation.set("checksumSha256", checksum);
+        const confirmed = await confirmArtifact(confirmation);
+        setFeedback(confirmed);
+        shouldRefresh = confirmed.ok;
+      } catch (error) {
+        setFeedback({ ok: false, status: 422, message: error instanceof Error ? error.message : "Arquivo invalido." });
+      } finally {
+        setPending(false);
+        if (!endWorkspaceMutation(shouldRefresh) && shouldRefresh) {
+          setTimeout(() => router.refresh(), 0);
+        }
+      }
+    })();
+  };
+  const status = (
+    <div className={`bh-state-panel ${feedback && !feedback.ok ? "bh-state-panel-risk" : ""}`} role="status" data-testid="mutation-feedback">
+      <strong>{pending ? "Processando" : feedback?.ok ? "Concluido" : feedback ? `Falha HTTP ${feedback.status}` : "Pronto"}</strong>
+      <p>{pending ? "A operacao esta sendo confirmada no backend." : feedback?.message ?? "Preencha os dados e confirme a operacao."}</p>
+    </div>
+  );
+  const hiddenOrganization = <input name="organizationId" type="hidden" value={organizationId} />;
+
+  if (code === "T05") return (
+    <Journey title="Trocar organizacao" status={status}>
+      <form onSubmit={submit(switchTenant)} className="bh-form-grid">
+        <label className="bh-field"><span>Organizacao</span><select name="organizationId" defaultValue={organizationId}>{snapshot.organizationOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <Submit pending={pending}>Trocar tenant</Submit>
+      </form>
+    </Journey>
+  );
+
+  if (code === "T10") return (
+    <Journey title="Criar sala" status={status}>
+      <div aria-label="Salas visiveis" className="bh-state-panel">
+        <strong>{visibleRooms.counters.total} salas · {visibleRooms.counters.unread} nao lidas</strong>
+        <ul className="bh-list">{visibleRooms.items.map((room) => <li key={room.id}>{room.name}</li>)}</ul>
+      </div>
+      <form onSubmit={submit(createRoom)} className="bh-form-grid">
+        {hiddenOrganization}
+        <label className="bh-field"><span>Nome</span><input name="name" required maxLength={160} defaultValue="Sala criada pela interface" /></label>
+        <label className="bh-field"><span>Descricao</span><textarea name="description" maxLength={2000} /></label>
+        <label className="bh-field"><span><input name="isPrivate" type="checkbox" /> Sala privada</span></label>
+        <Submit pending={pending}>Criar sala</Submit>
+      </form>
+    </Journey>
+  );
+
+  if (code === "T11") return (
+    <Journey title="Enviar mensagem" status={status}>
+      <ul aria-label="Mensagens reais reconciliadas" className="bh-list">
+        {messages.filter((message) => message.roomId === selectedRoomId).map((message) => (
+          <li data-client-id={message.clientId} data-message-id={message.id} key={message.id}>
+            {message.body}
+          </li>
+        ))}
+      </ul>
+      <VirtualTimeline items={timelineFixtures} />
+      <form onSubmit={submit(createMessage)} className="bh-form-grid">
+        {hiddenOrganization}<input name="clientId" type="hidden" value={idempotencyKey} />
+        <label className="bh-field"><span>Sala</span><select name="roomId" onChange={(event) => setSelectedRoomId(event.target.value)} required value={selectedRoomId}>{snapshot.roomOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="bh-field"><span>Mensagem</span><textarea name="body" required maxLength={100000} aria-label="Nova mensagem real" /></label>
+        <Submit pending={pending}>Enviar mensagem</Submit>
+      </form>
+      <form aria-label="Criar tarefa a partir da mensagem" onSubmit={submit(createTask)} className="bh-form-grid">
+        {hiddenOrganization}<input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+        <input name="roomId" type="hidden" value={snapshot.roomOptions[0]?.id ?? ""} />
+        <input name="sourceMessageId" type="hidden" value={timelineFixtures[0]?.id ?? ""} />
+        <input name="goal" type="hidden" value="Dar continuidade ao contexto desta mensagem" />
+        <input name="title" type="hidden" value="Tarefa originada da conversa" />
+        <Submit pending={pending}>Criar tarefa a partir da mensagem</Submit>
+      </form>
+    </Journey>
+  );
+
+  if (code === "T13") return (
+    <Journey title="Upload assinado" status={status}>
+      <form onSubmit={submitUpload} className="bh-form-grid">
+        <label className="bh-field"><span>Arquivo</span><input name="file" type="file" required /></label>
+        <Submit pending={pending}>Enviar e confirmar</Submit>
+      </form>
+    </Journey>
+  );
+
+  if (code === "T15") return (
+    <Journey title="Criar tarefa" status={status}>
+      <form onSubmit={submit(createTask)} className="bh-form-grid">
+        {hiddenOrganization}<input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+        <label className="bh-field"><span>Titulo</span><input name="title" maxLength={240} defaultValue="Tarefa criada pela interface" /></label>
+        <label className="bh-field"><span>Objetivo</span><textarea name="goal" required maxLength={10000} /></label>
+        <label className="bh-field"><span>Risco</span><select name="risk" defaultValue="low"><option value="low">Baixo</option><option value="medium">Medio</option><option value="high">Alto</option></select></label>
+        <label className="bh-field"><span>Sala de origem</span><select name="roomId"><option value="">Sem sala</option>{snapshot.roomOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="bh-field"><span>Dependencias</span><select multiple name="dependencies">{snapshot.taskOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <Submit pending={pending}>Criar tarefa</Submit>
+      </form>
+      {snapshot.taskOptions[0] ? <form aria-label="Editar dependencias da tarefa" onSubmit={submit(replaceTaskDependencies)} className="bh-form-grid">
+        {hiddenOrganization}<input name="taskId" type="hidden" value={snapshot.taskOptions[0].id} /><input name="expectedVersion" type="hidden" value={snapshot.taskOptions[0].version ?? 1} />
+        <label className="bh-field"><span>Dependencias da tarefa existente</span><select aria-describedby="existing-dependencies-error" multiple name="dependencies">{snapshot.taskOptions.slice(1).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        {typeof feedback?.data?.fieldErrors === "object" && feedback.data.fieldErrors !== null && "dependencies" in feedback.data.fieldErrors ? <FieldError id="existing-dependencies-error">{String(feedback.data.fieldErrors.dependencies)}</FieldError> : null}
+        <Submit pending={pending}>Salvar dependencias</Submit>
+      </form> : null}
+    </Journey>
+  );
+
+  if (code === "T16") {
+    const task = snapshot.taskOptions[0];
+    const allowedTransitions = allowedTaskTransitions(task?.status);
+    return (
+      <Journey title="Transicionar tarefa" status={status}>
+        <form onSubmit={submit(transitionTask)} className="bh-form-grid">
+          {hiddenOrganization}
+          <input name="taskId" type="hidden" value={task?.id ?? ""} />
+          <p>{task?.name ?? "Nenhuma tarefa disponivel"}</p>
+          <input name="expectedVersion" type="hidden" value={task?.version ?? 1} />
+          <label className="bh-field"><span>Destino</span><select aria-label="Destino valido" disabled={allowedTransitions.length === 0} name="targetState" defaultValue={allowedTransitions[0]}>{allowedTransitions.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+          <label className="bh-field"><span>Motivo</span><textarea name="reason" maxLength={4000} /></label>
+          <Submit pending={pending} disabled={!task || allowedTransitions.length === 0}>Aplicar transicao</Submit>
+        </form>
+      </Journey>
+    );
+  }
+
+  if (code === "T21") {
+    const approval = snapshot.approvalOptions.find((item) => item.status === "pending");
+    return (
+      <Journey title="Decidir aprovacao" status={status}>
+        <form onSubmit={submit(decideApproval)} className="bh-form-grid">
+          {hiddenOrganization}<input name="approvalId" type="hidden" value={approval?.id ?? ""} /><input name="expectedRound" type="hidden" value={approval?.round ?? 1} />
+          <label className="bh-field"><span>Decisao</span><select name="decision"><option value="approved">Aprovar</option><option value="changes_requested">Solicitar alteracoes</option><option value="rejected">Rejeitar</option></select></label>
+          <label className="bh-field"><span>Comentario</span><textarea name="comment" maxLength={10000} /></label>
+          <Submit pending={pending} disabled={!approval}>Registrar decisao</Submit>
+        </form>
+      </Journey>
+    );
+  }
+
+  if (code === "T44") return (
+    <Journey title="Criar conteudo" status={status}>
+      <form onSubmit={submit(createContentAsset)} className="bh-form-grid">
+        {hiddenOrganization}<input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+        <label className="bh-field"><span>Titulo</span><input name="title" maxLength={500} /></label>
+        <label className="bh-field"><span>Briefing</span><textarea name="brief" required maxLength={20000} /></label>
+        <label className="bh-field"><span>Canal</span><select name="channel"><option value="email">E-mail</option><option value="linkedin">LinkedIn</option></select></label>
+        <Submit pending={pending}>Criar ativo</Submit>
+      </form>
+    </Journey>
+  );
+
+  const experiment = snapshot.experimentOptions.find((item) => item.status === "draft");
+  return (
+    <Journey title="Configurar e iniciar experimento" status={status}>
+      <form onSubmit={submit(scheduleExperiment)} className="bh-form-grid">
+        {hiddenOrganization}<input name="experimentId" type="hidden" value={experiment?.id ?? ""} /><input name="expectedUpdatedAt" type="hidden" value={experiment?.updatedAt ?? ""} />
+        <label className="bh-field"><span>Hipotese</span><textarea name="hypothesis" required maxLength={10000} defaultValue={experiment?.name ?? "Hipotese configurada pela interface"} /></label>
+        <Submit pending={pending} disabled={!experiment}>Configurar e iniciar</Submit>
+        {!experiment ? <p>Nao ha experimento draft disponivel. Experimentos em execucao mantem hipotese e variantes bloqueadas.</p> : null}
+      </form>
+    </Journey>
+  );
+}
+
+function Journey({ title, status, children }: { title: string; status: ReactNode; children: ReactNode }) {
+  return <div className="bh-columns" data-testid="critical-journey"><Card><div className="bh-card-title"><h3>{title}</h3><span className="bh-label">persistencia real</span></div>{children}</Card><Card>{status}</Card></div>;
+}
+
+function Submit({ pending, disabled, children }: { pending: boolean; disabled?: boolean; children: ReactNode }) {
+  return <Button type="submit" disabled={pending || disabled} className="bh-chip">{pending ? "Processando..." : children}</Button>;
+}

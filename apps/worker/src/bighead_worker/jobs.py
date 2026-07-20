@@ -1,0 +1,135 @@
+import asyncio
+
+from bighead_pycore.models import WorkerHeartbeat
+from structlog import get_logger
+
+from bighead_worker.artifact_scan import scan_artifact
+from bighead_worker.crm_gateway import dispatch_crm_sync_jobs
+from bighead_worker.ingestion import dispatch_anything_llm_ingestions
+from bighead_worker.outbox import dispatch_outbox
+from bighead_worker.privacy import process_privacy_requests
+from bighead_worker.runs import dispatch_runs
+from bighead_worker.webhooks import dispatch_webhooks
+
+logger = get_logger(__name__)
+
+
+async def heartbeat_job(ctx: dict[str, object]) -> WorkerHeartbeat:
+    await asyncio.sleep(0.05)
+    settings = ctx["settings"]
+    payload = WorkerHeartbeat(
+        queue_name=settings.queue_name,  # type: ignore[attr-defined]
+        status="ok",
+    )
+    logger.info("worker.heartbeat", queue_name=payload.queue_name, status=payload.status)
+    return payload
+
+
+async def scan_pending_artifacts_job(ctx: dict[str, object]) -> dict[str, int]:
+    store = ctx["artifact_scan_store"]
+    scanner = ctx["malware_scanner"]
+    settings = ctx["settings"]
+    worker = str(ctx["worker_id"])
+    artifact_ids = await store.claim(  # type: ignore[attr-defined]
+        worker,
+        25,
+        settings.job_lease_seconds,  # type: ignore[attr-defined]
+    )
+    clean = 0
+    rejected = 0
+    retried = 0
+    for artifact_id in artifact_ids:
+        verdict = await scan_artifact(
+            store,  # type: ignore[arg-type]
+            scanner,  # type: ignore[arg-type]
+            artifact_id,
+            worker=worker,
+        )
+        clean += verdict == "clean"
+        rejected += verdict == "rejected"
+        retried += verdict == "retry"
+    return {
+        "processed": clean + rejected,
+        "clean": clean,
+        "rejected": rejected,
+        "retried": retried,
+    }
+
+
+async def dispatch_outbox_job(ctx: dict[str, object]) -> dict[str, int]:
+    settings = ctx["settings"]
+    published, failed = await dispatch_outbox(
+        ctx["outbox_store"],  # type: ignore[arg-type]
+        ctx["event_publisher"],  # type: ignore[arg-type]
+        worker=f"{settings.queue_name}:outbox",  # type: ignore[attr-defined]
+        lease_seconds=settings.job_lease_seconds,  # type: ignore[attr-defined]
+    )
+    return {"published": published, "failed": failed}
+
+
+async def dispatch_webhooks_job(ctx: dict[str, object]) -> dict[str, int]:
+    settings = ctx["settings"]
+    delivered, failed = await dispatch_webhooks(
+        ctx["webhook_store"],  # type: ignore[arg-type]
+        ctx["webhook_sender"],  # type: ignore[arg-type]
+        worker=f"{settings.queue_name}:webhooks",  # type: ignore[attr-defined]
+        lease_seconds=settings.job_lease_seconds,  # type: ignore[attr-defined]
+    )
+    return {"delivered": delivered, "failed": failed}
+
+
+async def process_privacy_job(ctx: dict[str, object]) -> dict[str, int]:
+    settings = ctx["settings"]
+    completed, failed = await process_privacy_requests(
+        ctx["privacy_store"],  # type: ignore[arg-type]
+        worker=f"{settings.queue_name}:privacy",  # type: ignore[attr-defined]
+        lease_seconds=settings.job_lease_seconds,  # type: ignore[attr-defined]
+    )
+    return {"completed": completed, "failed": failed}
+
+
+async def dispatch_runs_job(ctx: dict[str, object]) -> dict[str, int]:
+    settings = ctx["settings"]
+    executor = ctx.get("run_executor")
+    if executor is None:
+        # Fail before claiming a lease. This keeps queued runs untouched until a
+        # real provider adapter is explicitly configured.
+        raise RuntimeError("run provider adapter is not configured")
+    completed, failed = await dispatch_runs(
+        ctx["run_store"],  # type: ignore[arg-type]
+        executor,  # type: ignore[arg-type]
+        worker=f"{settings.queue_name}:runs",  # type: ignore[attr-defined]
+        lease_seconds=settings.job_lease_seconds,  # type: ignore[attr-defined]
+    )
+    return {"completed": completed, "failed": failed}
+
+
+async def dispatch_crm_sync_job(ctx: dict[str, object]) -> dict[str, int]:
+    adapter_factory = ctx.get("crm_adapter_factory")
+    crm_job_store = ctx.get("crm_job_store")
+    if adapter_factory is None or crm_job_store is None:
+        return {"completed": 0, "failed": 0}
+    settings = ctx["settings"]
+    completed, failed = await dispatch_crm_sync_jobs(
+        crm_job_store,  # type: ignore[arg-type]
+        adapter_factory,  # type: ignore[arg-type]
+        worker=f"{ctx['worker_id']}:crm",
+        lease_seconds=settings.job_lease_seconds,  # type: ignore[attr-defined]
+    )
+    return {"completed": completed, "failed": failed}
+
+
+async def dispatch_anything_llm_ingestions_job(ctx: dict[str, object]) -> dict[str, int]:
+    client = ctx.get("anything_llm_ingestion_client")
+    store = ctx.get("anything_llm_ingestion_store")
+    if client is None or store is None:
+        # Do not claim work unless a real provider and its durable store are configured.
+        raise RuntimeError("AnythingLLM ingestion provider is not configured")
+    settings = ctx["settings"]
+    completed, failed = await dispatch_anything_llm_ingestions(
+        store,  # type: ignore[arg-type]
+        client,  # type: ignore[arg-type]
+        worker=f"{ctx['worker_id']}:anythingllm",
+        lease_seconds=settings.job_lease_seconds,  # type: ignore[attr-defined]
+    )
+    return {"completed": completed, "failed": failed}

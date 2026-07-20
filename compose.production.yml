@@ -1,0 +1,190 @@
+name: bigheadct
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    init: true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:-head.fbr.news}
+      API_DOMAIN: ${API_DOMAIN:-apibig.fbr.news}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    init: true
+    user: "999:1000"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    init: true
+    volumes:
+      - clamav_db:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    image: ${BIGHEAD_WEB_IMAGE:-bigheadct-web:local}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is required}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is required}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    environment:
+      APP_ENV: production
+      APP_URL: ${APP_URL:?APP_URL is required}
+      API_URL: ${API_URL:?API_URL is required}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is required}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is required}
+      SUPABASE_AUTH_SITE_URL: ${SUPABASE_AUTH_SITE_URL:?SUPABASE_AUTH_SITE_URL is required}
+      SUPABASE_AUTH_REDIRECT_URLS: ${SUPABASE_AUTH_REDIRECT_URLS:?SUPABASE_AUTH_REDIRECT_URLS is required}
+      SUPABASE_AUTH_SMTP_CONFIGURED: ${SUPABASE_AUTH_SMTP_CONFIGURED:?SUPABASE_AUTH_SMTP_CONFIGURED is required}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    image: ${BIGHEAD_API_IMAGE:-bigheadct-api:local}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    environment:
+      APP_ENV: production
+      APP_URL: ${APP_URL:?APP_URL is required}
+      API_URL: ${API_URL:?API_URL is required}
+      API_PORT: "8000"
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DATABASE_SERVICE_URL: ${DATABASE_SERVICE_URL:?DATABASE_SERVICE_URL is required}
+      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?SUPABASE_PUBLISHABLE_KEY is required}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:?SUPABASE_SECRET_KEY is required}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-artifacts}
+      SIGNED_URL_TTL_SECONDS: ${SIGNED_URL_TTL_SECONDS:-900}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      QUEUE_NAME: ${QUEUE_NAME:-bigheadct:jobs}
+      JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-300}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-bigheadct-api}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:?WEBHOOK_SIGNING_SECRET is required}
+      PORTAL_TOKEN_PEPPER: ${PORTAL_TOKEN_PEPPER:?PORTAL_TOKEN_PEPPER is required}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: ${BIGHEAD_WORKER_IMAGE:-bigheadct-worker:local}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      QUEUE_NAME: ${QUEUE_NAME:-bigheadct:jobs}
+      JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-300}
+      OTEL_SERVICE_NAME: ${WORKER_OTEL_SERVICE_NAME:-bigheadct-worker}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:?SUPABASE_SECRET_KEY is required}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-artifacts}
+      MALWARE_SCANNER_URL: ${MALWARE_SCANNER_URL:-clamd://clamav:3310}
+      MALWARE_SCANNER_API_KEY: ${MALWARE_SCANNER_API_KEY:-}
+      RUN_PROVIDER_URL: ${RUN_PROVIDER_URL:-}
+      RUN_PROVIDER_API_KEY: ${RUN_PROVIDER_API_KEY:-}
+      RUN_PROVIDER_TIMEOUT_SECONDS: ${RUN_PROVIDER_TIMEOUT_SECONDS:-60}
+      LLM_PROVIDER_DEFAULT: ${LLM_PROVIDER_DEFAULT:?LLM_PROVIDER_DEFAULT is required}
+      LLM_PROVIDER_FALLBACK: ${LLM_PROVIDER_FALLBACK:?LLM_PROVIDER_FALLBACK is required}
+      LLM_MODEL_DEFAULT: ${LLM_MODEL_DEFAULT:?LLM_MODEL_DEFAULT is required}
+      LLM_MODEL_FALLBACK: ${LLM_MODEL_FALLBACK:?LLM_MODEL_FALLBACK is required}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+      CRM_PROVIDER_ENDPOINTS: ${CRM_PROVIDER_ENDPOINTS:-}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on:
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redis_data:
+  clamav_db:

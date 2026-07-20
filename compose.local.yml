@@ -1,0 +1,99 @@
+name: bighead-local-app
+
+services:
+  profiles-init:
+    image: busybox:1.36
+    user: "0:0"
+    command: sh -c "mkdir -p /profiles && chown -R 10001:10001 /profiles"
+    volumes:
+      - hermes_profiles:/profiles
+
+  web:
+    environment:
+      APP_ENV: test
+      ALLOW_INSECURE_LOCAL_PRODUCTION: "true"
+      APP_URL: ${APP_URL}
+      API_URL: http://api:8000
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_AUTH_SITE_URL: ${SUPABASE_AUTH_SITE_URL}
+      SUPABASE_AUTH_REDIRECT_URLS: ${SUPABASE_AUTH_REDIRECT_URLS}
+      SUPABASE_AUTH_SMTP_CONFIGURED: "true"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  api:
+    depends_on:
+      profiles-init:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: test
+      APP_URL: ${APP_URL}
+      API_URL: ${API_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      HERMES_API_URL: http://hermes:8642
+      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_PROFILES_DIR: /profiles
+      HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL}
+      HERMES_TIMEOUT_SECONDS: ${HERMES_TIMEOUT_SECONDS}
+    volumes:
+      - hermes_profiles:/profiles
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  worker:
+    depends_on:
+      profiles-init:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: test
+      HERMES_API_URL: http://hermes:8642
+      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_PROFILES_DIR: /profiles
+      HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL}
+      HERMES_TIMEOUT_SECONDS: ${HERMES_TIMEOUT_SECONDS}
+      LLM_PROVIDER_DEFAULT: hermes
+      LLM_PROVIDER_FALLBACK: ""
+      LLM_MODEL_DEFAULT: hermes
+      LLM_MODEL_FALLBACK: ""
+      OPENAI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GOOGLE_GENAI_API_KEY: ""
+    volumes:
+      - hermes_profiles:/profiles
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  hermes:
+    depends_on:
+      profiles-init:
+        condition: service_completed_successfully
+    image: ${BIGHEAD_HERMES_IMAGE:-bigheadct-hermes:local}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.hermes
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:8642:8642"
+    environment:
+      PORT: 8642
+      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL}
+      HERMES_PROFILES_DIR: /profiles
+    volumes:
+      - hermes_profiles:/profiles
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8642/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  hermes_profiles:

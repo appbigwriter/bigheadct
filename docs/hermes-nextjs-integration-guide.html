@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BigHeadCT — Hermes no fluxo do Next.js</title>
+  <meta name="description" content="Guia compartilhável sobre como o BigHeadCT trata a integração Hermes hoje e como construir essa integração usando Next.js." />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --bg-soft: #0b1729;
+      --panel: rgba(14, 26, 46, 0.86);
+      --panel-2: rgba(15, 30, 53, 0.92);
+      --line: rgba(148, 163, 184, 0.18);
+      --line-strong: rgba(148, 163, 184, 0.3);
+      --text: #e5eefb;
+      --muted: #9fb2cc;
+      --accent: #6ee7ff;
+      --accent-2: #7cdb94;
+      --warn: #f6c177;
+      --code-bg: #09101d;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+      --radius: 18px;
+      --radius-sm: 12px;
+      --max: 1120px;
+      font-synthesis-weight: none;
+      font-synthesis-style: none;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 500px at 15% 0%, rgba(110, 231, 255, 0.10), transparent 60%),
+        radial-gradient(900px 400px at 85% 10%, rgba(124, 219, 148, 0.08), transparent 55%),
+        linear-gradient(180deg, var(--bg) 0%, #050b14 100%);
+      min-height: 100vh;
+    }
+
+    a { color: inherit; }
+    .page {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .hero {
+      background: linear-gradient(180deg, rgba(12, 24, 42, 0.92), rgba(8, 17, 31, 0.96));
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) + 8px);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero-inner {
+      display: grid;
+      gap: 28px;
+      padding: 32px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid rgba(110, 231, 255, 0.22);
+      border-radius: 999px;
+      color: var(--accent);
+      background: rgba(110, 231, 255, 0.06);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 12px 0 12px;
+      font-size: clamp(2.2rem, 5vw, 4.5rem);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+      max-width: 10ch;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 72ch;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.7;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(290px, 0.8fr);
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+      backdrop-filter: blur(10px);
+    }
+
+    .callouts {
+      display: grid;
+      gap: 12px;
+    }
+
+    .callout {
+      background: linear-gradient(180deg, rgba(15, 30, 53, 0.95), rgba(10, 20, 37, 0.95));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+    }
+
+    .callout strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.95rem;
+    }
+
+    .callout span {
+      color: var(--muted);
+      font-size: 0.94rem;
+      line-height: 1.5;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 0.88rem;
+    }
+
+    .pill b { color: var(--accent-2); }
+
+    section.block {
+      margin-top: 20px;
+      background: rgba(8, 15, 27, 0.72);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    section.block h2 {
+      margin: 0 0 10px;
+      font-size: 1.4rem;
+      letter-spacing: -0.03em;
+    }
+
+    section.block p, section.block li {
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .diagram-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(11, 23, 41, 0.95), rgba(6, 12, 22, 0.98));
+      padding: 12px;
+    }
+
+    svg {
+      width: 100%;
+      min-width: 920px;
+      height: auto;
+      display: block;
+    }
+
+    .node {
+      fill: #101f36;
+      stroke: rgba(110, 231, 255, 0.28);
+      stroke-width: 1.5;
+    }
+    .node.alt {
+      fill: #0d2430;
+      stroke: rgba(124, 219, 148, 0.28);
+    }
+    .node.warn {
+      fill: #241b0c;
+      stroke: rgba(246, 193, 119, 0.3);
+    }
+    .node-title {
+      fill: var(--text);
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .node-sub {
+      fill: var(--muted);
+      font-size: 12px;
+    }
+    .arrow {
+      stroke: rgba(159, 178, 204, 0.6);
+      stroke-width: 2.5;
+      fill: none;
+      marker-end: url(#arrowhead);
+    }
+    .label {
+      fill: var(--warn);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .steps {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .step {
+      counter-increment: step;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 18px 18px 20px;
+    }
+
+    .step h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      letter-spacing: -0.02em;
+    }
+
+    .step h3::before {
+      content: counter(step);
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      margin-right: 10px;
+      border-radius: 999px;
+      background: rgba(110, 231, 255, 0.12);
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 800;
+    }
+
+    pre {
+      margin: 14px 0 0;
+      padding: 16px;
+      overflow: auto;
+      background: var(--code-bg);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 14px;
+      color: #dbeafe;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 18px;
+    }
+
+    .note {
+      padding: 14px 16px;
+      border-left: 4px solid var(--warn);
+      background: rgba(246, 193, 119, 0.08);
+      border-radius: 12px;
+      color: #ffe8bc;
+    }
+
+    .refs a {
+      display: inline-flex;
+      margin: 6px 10px 0 0;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      text-decoration: none;
+      color: var(--accent);
+      background: rgba(110, 231, 255, 0.05);
+    }
+
+    .footer {
+      margin-top: 22px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .hero-grid, .grid-2, .two-col { grid-template-columns: 1fr; }
+      .hero-inner, section.block { padding: 18px; }
+      h1 { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <article class="hero">
+      <div class="hero-inner">
+        <div class="eyebrow">BigHeadCT · Hermes · Next.js</div>
+        <div class="hero-grid">
+          <div>
+            <h1>Como o BigHeadCT fala com o Hermes — e como construir isso em Next.js</h1>
+            <p class="lead">
+              Este documento resume a integração real do Hermes no BigHeadCT, mostra o desenho do fluxo
+              e descreve um caminho prático para implementar a mesma ideia com Next.js usando uma fronteira
+              server-only, route handlers e açõeses de mutação no servidor.
+            </p>
+            <div class="meta">
+              <span class="pill"><b>API</b> prepara o profile</span>
+              <span class="pill"><b>Worker</b> executa o diálogo</span>
+              <span class="pill"><b>Hermes</b> é serviço externo</span>
+              <span class="pill"><b>Next.js</b> mantém segredos no servidor</span>
+            </div>
+          </div>
+          <aside class="card callouts">
+            <div class="callout">
+              <strong>Leitura sincera</strong>
+              <span>Hermes já está profundamente integrado, mas como motor de execução, não como UI.</span>
+            </div>
+            <div class="callout">
+              <strong>Decisão arquitetural</strong>
+              <span>O melhor ponto de entrada em Next.js é um Route Handler server-only, com Server Actions para forms.</span>
+            </div>
+            <div class="callout">
+              <strong>Regra de segurança</strong>
+              <span>A chave do Hermes nunca deve ir para o browser. O cliente conversa com a sua rota, não com o Hermes direto.</span>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <section class="block">
+      <h2>Fluxo detalhado da integração Hermes</h2>
+      <p>
+        O acoplamento não acontece em uma única chamada; ele atravessa governança, filesystem,
+        seleção de executor e contrato de resposta. O resumo correto é este: a API materializa o
+        perfil do agente, o worker decide se Hermes é o motor daquele run, o executor prepara o
+        payload e o cliente valida a resposta antes de qualquer dado voltar para a aplicação.
+      </p>
+
+      <div class="diagram-wrap" aria-label="Fluxo Hermes detalhado">
+        <svg viewBox="0 0 1580 640" role="img" aria-labelledby="flow-title flow-desc">
+          <title id="flow-title">Fluxo detalhado da integração Hermes no BigHeadCT</title>
+          <desc id="flow-desc">Fluxo em três camadas: governança do profile na API, execução do run no worker e entrada via Next.js. A API sincroniza o profile em HERMES_PROFILES_DIR, o worker escolhe HermesRunExecutor quando LLM_PROVIDER_DEFAULT=hermes, o HermesClient chama o serviço externo com headers de telemetria e o resultado é validado antes de ser persistido.</desc>
+          <defs>
+            <marker id="arrowhead" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+              <path d="M0,0 L12,4 L0,8 z" fill="rgba(159, 178, 204, 0.75)"></path>
+            </marker>
+          </defs>
+
+          <text x="40" y="40" class="label">CAMADA 1 · GOVERNANÇA DO PROFILE</text>
+          <rect class="node alt" x="40" y="70" rx="18" ry="18" width="250" height="92"></rect>
+          <text x="62" y="108" class="node-title">Agent create / update / delete</text>
+          <text x="62" y="134" class="node-sub">evento nasce na API do BigHead</text>
+
+          <rect class="node" x="335" y="70" rx="18" ry="18" width="275" height="92"></rect>
+          <text x="357" y="108" class="node-title">Governance service</text>
+          <text x="357" y="134" class="node-sub">valida agente, versão e estado</text>
+
+          <rect class="node alt" x="655" y="70" rx="18" ry="18" width="275" height="92"></rect>
+          <text x="677" y="108" class="node-title">HermesProfileSync</text>
+          <text x="677" y="134" class="node-sub">gera YAML com contrato esperado</text>
+
+          <rect class="node" x="975" y="70" rx="18" ry="18" width="240" height="92"></rect>
+          <text x="997" y="108" class="node-title">HERMES_PROFILES_DIR</text>
+          <text x="997" y="134" class="node-sub">write temp + rename atômico</text>
+
+          <rect class="node warn" x="1260" y="70" rx="18" ry="18" width="270" height="92"></rect>
+          <text x="1282" y="108" class="node-title">Profile pronto para o worker</text>
+          <text x="1282" y="134" class="node-sub">agent_version_id.yaml ativo</text>
+
+          <path class="arrow" d="M290 116 L335 116"></path>
+          <path class="arrow" d="M610 116 L655 116"></path>
+          <path class="arrow" d="M930 116 L975 116"></path>
+          <path class="arrow" d="M1215 116 L1260 116"></path>
+
+          <text x="40" y="240" class="label">CAMADA 2 · EXECUÇÃO DO RUN</text>
+          <rect class="node warn" x="40" y="270" rx="18" ry="18" width="250" height="96"></rect>
+          <text x="62" y="308" class="node-title">Worker do BigHead</text>
+          <text x="62" y="334" class="node-sub">RUN_PROVIDER_URL ou Hermes</text>
+          <text x="62" y="354" class="node-sub">define o executor em runtime</text>
+
+          <rect class="node" x="335" y="270" rx="18" ry="18" width="275" height="96"></rect>
+          <text x="357" y="308" class="node-title">HermesRunExecutor</text>
+          <text x="357" y="334" class="node-sub">monta payload, idempotência e headers</text>
+          <text x="357" y="354" class="node-sub">X-Hermes-Profile + org + run</text>
+
+          <rect class="node alt" x="655" y="270" rx="18" ry="18" width="260" height="96"></rect>
+          <text x="677" y="308" class="node-title">HermesClient</text>
+          <text x="677" y="334" class="node-sub">POST /v1/chat/completions</text>
+          <text x="677" y="354" class="node-sub">Authorization + timeout</text>
+
+          <rect class="node" x="960" y="270" rx="18" ry="18" width="240" height="96"></rect>
+          <text x="982" y="308" class="node-title">Hermes externo</text>
+          <text x="982" y="334" class="node-sub">retorna id, model, usage</text>
+          <text x="982" y="354" class="node-sub">choices + tool_calls</text>
+
+          <rect class="node alt" x="1240" y="270" rx="18" ry="18" width="290" height="96"></rect>
+          <text x="1262" y="308" class="node-title">Validação e persistência</text>
+          <text x="1262" y="334" class="node-sub">contrato validado antes da saída</text>
+          <text x="1262" y="354" class="node-sub">run state, tokens e eventos</text>
+
+          <path class="arrow" d="M290 318 L335 318"></path>
+          <path class="arrow" d="M610 318 L655 318"></path>
+          <path class="arrow" d="M915 318 L960 318"></path>
+          <path class="arrow" d="M1200 318 L1240 318"></path>
+
+          <text x="40" y="460" class="label">CAMADA 3 · NEXT.JS COMO FRENTE DE ENTRADA</text>
+          <rect class="node alt" x="40" y="490" rx="18" ry="18" width="250" height="92"></rect>
+          <text x="62" y="528" class="node-title">Browser / form</text>
+          <text x="62" y="554" class="node-sub">usuário aciona a intenção</text>
+
+          <rect class="node" x="335" y="490" rx="18" ry="18" width="275" height="92"></rect>
+          <text x="357" y="528" class="node-title">Server Action ou Route Handler</text>
+          <text x="357" y="554" class="node-sub">nunca expõe segredo ao cliente</text>
+
+          <rect class="node alt" x="655" y="490" rx="18" ry="18" width="275" height="92"></rect>
+          <text x="677" y="528" class="node-title">Client Hermes server-only</text>
+          <text x="677" y="554" class="node-sub">reaproveita o mesmo contrato</text>
+
+          <rect class="node" x="975" y="490" rx="18" ry="18" width="240" height="92"></rect>
+          <text x="997" y="528" class="node-title">Resposta validada</text>
+          <text x="997" y="554" class="node-sub">retorna apenas o resultado seguro</text>
+
+          <rect class="node warn" x="1260" y="490" rx="18" ry="18" width="270" height="92"></rect>
+          <text x="1282" y="528" class="node-title">UI atualiza estado</text>
+          <text x="1282" y="554" class="node-sub">sem chave, sem acesso direto</text>
+
+          <path class="arrow" d="M290 536 L335 536"></path>
+          <path class="arrow" d="M610 536 L655 536"></path>
+          <path class="arrow" d="M930 536 L975 536"></path>
+          <path class="arrow" d="M1215 536 L1260 536"></path>
+
+          <text x="1030" y="222" class="label">LLM_PROVIDER_DEFAULT=hermes</text>
+          <text x="1000" y="612" class="label">APIs e segredos continuam no servidor</text>
+        </svg>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Como o diálogo funciona hoje, sem atalhos</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin-top:0">1. A mutação nasce na governança</h3>
+          <p>
+            A mudança do agente entra pela API do BigHead. O service valida o payload, grava o
+            estado governado e chama o <code>HermesProfileSync</code> quando a integração Hermes
+            está configurada.
+          </p>
+          <pre><code>// API
+HermesProfileSync.sync_agent(agent_data)
+// gera agent_version_id.yaml no diretório do Hermes</code></pre>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">2. O profile vira arquivo no filesystem</h3>
+          <p>
+            O profile é escrito em <code>HERMES_PROFILES_DIR</code> usando escrita temporária e
+            rename atômico. Esse detalhe é importante porque evita profile pela metade e mantém o
+            worker lendo sempre algo consistente.
+          </p>
+          <pre><code>// hermes_sync.py
+temp_file = ...
+os.replace(temp_file, final_path)</code></pre>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">3. O worker resolve qual executor usar</h3>
+          <p>
+            Quando o run começa, o worker olha a configuração. Se existe
+            <code>RUN_PROVIDER_URL</code>, ele usa o executor HTTP. Se não existir e o provider
+            default for <code>hermes</code>, ele monta o <code>HermesRunExecutor</code>.
+          </p>
+          <pre><code>// worker/main.py
+if settings.llm_provider_default == "hermes":
+    ctx["run_executor"] = HermesRunExecutor(...)</code></pre>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">4. O executor monta o contrato de chamada</h3>
+          <p>
+            O executor prepara headers e payload com <code>Authorization</code>,
+            <code>Idempotency-Key</code>, <code>X-Hermes-Profile</code>,
+            <code>X-BigHead-Organization-Id</code> e <code>X-BigHead-Run-Id</code>.
+          </p>
+          <pre><code>// HermesRunExecutor -> HermesClient
+headers = {
+  "Authorization": "Bearer ...",
+  "Idempotency-Key": "...",
+  "X-Hermes-Profile": agent_version_id,
+}</code></pre>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">5. Hermes responde e o cliente valida</h3>
+          <p>
+            O <code>HermesClient</code> lê a resposta e exige contrato mínimo: <code>id</code>,
+            <code>model</code>, <code>usage</code> e <code>choices</code>. Sem isso, o run falha de
+            forma controlada.
+          </p>
+          <pre><code>// packages/pycore/src/.../hermes.py
+if not response["id"] or not response["model"]:
+    raise HermesContractError(...)</code></pre>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">6. O resultado volta para a aplicação</h3>
+          <p>
+            Depois da validação, o run devolve <code>content</code>, <code>tool_calls</code> e
+            tokens para o banco, para a fila ou para a UI, sem expor a estrutura interna do Hermes.
+          </p>
+          <pre><code>// retorno seguro
+{
+  provider_event_id,
+  model,
+  input_tokens,
+  output_tokens,
+  content,
+  tool_calls
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Onde essa documentação se traduz em contrato técnico</h2>
+      <p>
+        O ponto importante não é o nome de um arquivo específico. O que importa é que toda
+        integração parecida com Hermes precisa explicitar, de forma reutilizável, quatro contratos:
+        ambiente, sync de configuração, execução e validação.
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin-top:0">1. Contrato de ambiente</h3>
+          <p>
+            Defina quais variáveis vivem só no servidor, quais podem ser públicas e qual é o ponto
+            de entrada do serviço externo. Em qualquer sistema, isso inclui URL, chave, timeout,
+            modelo default, diretório de artefatos e qualquer identificador de tenant ou workspace.
+          </p>
+          <ul>
+            <li>URL do provedor externo</li>
+            <li>chave ou token de autenticação</li>
+            <li>timeout e retry policy</li>
+            <li>diretório ou bucket de artefatos de profile</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">2. Contrato de sincronização</h3>
+          <p>
+            Sempre que um agente, workflow ou perfil muda, gere uma representação canônica desse
+            estado. Pode ser YAML, JSON ou registro em banco, desde que exista uma fonte de verdade
+            única para o executor consumir depois.
+          </p>
+          <ul>
+            <li>entrada: agente/versão aprovada</li>
+            <li>saída: profile canônico consumível</li>
+            <li>persistência atômica ou transacional</li>
+            <li>habilitar/desabilitar sem deixar lixo residual</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">3. Contrato de execução</h3>
+          <p>
+            O worker ou orquestrador precisa escolher o executor certo em tempo de execução,
+            montar payload, incluir headers de rastreabilidade e tratar o provedor como um
+            serviço externo com contrato rígido, nunca como detalhe interno da UI.
+          </p>
+          <ul>
+            <li>seleção de provider por configuração</li>
+            <li>headers de idempotência e rastreio</li>
+            <li>payload alinhado ao profile ativo</li>
+            <li>fallback e erro controlado</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">4. Contrato de validação</h3>
+          <p>
+            Antes de devolver qualquer resposta à interface ou gravar resultados, valide campos
+            mínimos do provedor: identificador, modelo, uso, conteúdo e metadados de ferramentas,
+            além de uma política clara para falhas de contrato.
+          </p>
+          <ul>
+            <li>id da execução/provedor</li>
+            <li>modelo usado</li>
+            <li>tokens de entrada/saída</li>
+            <li>conteúdo final e tool calls, se existirem</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note" style="margin-top:16px;">
+        Em resumo: para aplicar isso em qualquer sistema, documente o contrato do provedor, o
+        contrato de profile, o contrato do executor e o contrato de resposta. Os nomes mudam;
+        a arquitetura não.
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Como construir essa integração em Next.js</h2>
+      <p>
+        A forma mais segura e alinhada ao App Router é manter Hermes no servidor: o browser
+        chama sua rota ou sua Server Action, e o servidor faz a ponte HTTP até Hermes.
+      </p>
+
+      <ol class="steps">
+        <li class="step">
+          <h3>Defina o contrato de ambiente</h3>
+          <p>
+            Separe claramente o que é público e o que é segredo. No browser use apenas variáveis
+            <code>NEXT_PUBLIC_*</code>. Para Hermes, mantenha <code>HERMES_API_URL</code>,
+            <code>HERMES_API_KEY</code> e <code>HERMES_PROFILES_DIR</code> exclusivamente no servidor.
+          </p>
+          <pre><code># .env.local
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:55321
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+HERMES_API_URL=http://localhost:8642
+HERMES_API_KEY=...
+HERMES_PROFILES_DIR=F:\Projetos\BigHead\.omc\hermes\profiles
+HERMES_DEFAULT_MODEL=hermes
+HERMES_TIMEOUT_SECONDS=60</code></pre>
+        </li>
+
+        <li class="step">
+          <h3>Crie um cliente Hermes server-only</h3>
+          <p>
+            Centralize a chamada HTTP em um módulo que só roda no servidor. Isso evita duplicação
+            de headers, facilita logs e mantém a validação do contrato em um ponto só.
+          </p>
+          <pre><code>// src/server/hermes.ts
+import { HermesClient } from "@/lib/hermes-client";
+
+export function createHermesClient(env: NodeJS.ProcessEnv) {
+  return new HermesClient(
+    env.HERMES_API_URL!,
+    env.HERMES_API_KEY!,
+    Number(env.HERMES_TIMEOUT_SECONDS ?? 60)
+  );
+}</code></pre>
+        </li>
+
+        <li class="step">
+          <h3>Exponha um Route Handler no App Router</h3>
+          <p>
+            O Route Handler é a fronteira ideal para o browser chamar. O usuário envia o pedido
+            para sua aplicação e sua aplicação chama Hermes do lado do servidor.
+          </p>
+          <pre><code>// app/api/hermes/chat/route.ts
+import { NextResponse } from "next/server";
+import { createHermesClient } from "@/server/hermes";
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  const client = createHermesClient(process.env);
+  const response = await client.chatCompletion({
+    messages: body.messages,
+    idempotencyKey: body.idempotencyKey,
+    profile: body.profile,
+    organizationId: body.organizationId,
+    runId: body.runId,
+    model: body.model
+  });
+
+  return NextResponse.json(response);
+}</code></pre>
+        </li>
+
+        <li class="step">
+          <h3>Use Server Actions quando a origem for um formulário</h3>
+          <p>
+            Para fluxos guiados por formulário, Server Actions deixam o código mais compacto e
+            mantêm a mutação do lado do servidor. É a melhor escolha quando o usuário está enviando
+            uma ação de negócio e não precisa de uma API pública separada.
+          </p>
+          <pre><code>// app/actions/send-to-hermes.ts
+"use server";
+
+import { createHermesClient } from "@/server/hermes";
+
+export async function sendToHermes(payload: {
+  messages: Array&lt;{ role: string; content: string }&gt;;
+  profile?: string;
+}) {
+  const client = createHermesClient(process.env);
+  return client.chatCompletion({
+    messages: payload.messages,
+    idempotencyKey: crypto.randomUUID(),
+    profile: payload.profile
+  });
+}</code></pre>
+        </li>
+
+        <li class="step">
+          <h3>Valide a resposta antes de aceitar</h3>
+          <p>
+            A integração só fica confiável quando a resposta é validada. Exija id, model, usage e
+            choices antes de devolver qualquer dado ao frontend.
+          </p>
+          <pre><code>// contrato mínimo
+if (!response.provider_event_id || !response.model) {
+  throw new Error("Resposta Hermes fora do contrato");
+}</code></pre>
+        </li>
+
+        <li class="step">
+          <h3>Mantenha o frontend simples</h3>
+          <p>
+            O componente cliente deve só renderizar estados, enviar o formulário e mostrar a resposta.
+            O browser não deve conhecer chave, URL interna nem detalhes da execução.
+          </p>
+          <pre><code>// client component
+"use client";
+
+async function onSubmit() {
+  const res = await fetch("/api/hermes/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  setResult(await res.json());
+}</code></pre>
+        </li>
+
+        <li class="step">
+          <h3>Registre observabilidade e erros</h3>
+          <p>
+            Faça logs de idempotência, profile, run e status. Isso ajuda a separar falha do Hermes,
+            falha de contrato e falha de rede.
+          </p>
+          <pre><code>// exemplo de log
+logger.info("Hermes request", {
+  profile,
+  runId,
+  idempotencyKey,
+  model
+});</code></pre>
+        </li>
+      </ol>
+    </section>
+
+    <section class="block">
+      <h2>Arquitetura recomendada no Next.js</h2>
+      <div class="two-col">
+        <div class="card">
+          <h3 style="margin-top:0">Quando usar Route Handler</h3>
+          <ul>
+            <li>quando o browser precisa de uma rota previsível;</li>
+            <li>quando você quer separar API de UI com clareza;</li>
+            <li>quando a chamada pode vir de qualquer cliente, não só de um form.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Quando usar Server Action</h3>
+          <ul>
+            <li>quando a mutação nasce de um formulário;</li>
+            <li>quando o fluxo é interno ao app;</li>
+            <li>quando você quer reduzir boilerplate sem expor segredo algum.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note" style="margin-top:16px;">
+        Minha recomendação prática: use Route Handler como fronteira principal e Server Actions como
+        ergonomia para formulários. Isso costuma dar a melhor combinação entre clareza, segurança e manutenção.
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Referências oficiais usadas</h2>
+      <div class="refs">
+        <a href="https://nextjs.org/docs/app/getting-started/route-handlers" target="_blank" rel="noreferrer">Route Handlers</a>
+        <a href="https://nextjs.org/docs/pages/guides/environment-variables" target="_blank" rel="noreferrer">Environment Variables</a>
+        <a href="https://nextjs.org/docs/app/guides/forms" target="_blank" rel="noreferrer">Forms com Server Actions</a>
+        <a href="https://nextjs.org/docs/app/getting-started/server-and-client-components" target="_blank" rel="noreferrer">Server & Client Components</a>
+      </div>
+    </section>
+    <p class="footer">
+      Documento preparado para compartilhamento interno do BigHeadCT · Hermes tratado como integração operacional central.
+    </p>
+  </main>
+</body>
+</html>
