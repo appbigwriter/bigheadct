@@ -161,8 +161,8 @@ export function HomeDashboard({ snapshot }: { snapshot: WorkspaceSnapshot }) {
           </p>
         </div>
         <div className={styles.headerActions}>
-          <Link className={styles.secondaryAction} href="/acesso/onboarding">
-            Nova organização
+          <Link className={styles.secondaryAction} href="/acesso/organizacoes">
+            Minhas organizações
           </Link>
           <Link className={styles.primaryAction} href="/tarefas/criar">
             Nova tarefa <ArrowUpRight aria-hidden="true" size={17} />

@@ -23,9 +23,7 @@ export async function ScreenTemplate({ screen, searchParams = {} }: ScreenTempla
   const excludedRoutes = new Set(["governanca/portal-externo", "automacao/skill-teste", "conhecimento/busca-semantica"]);
   const compactRoutes = new Set([
     "acesso/recuperacao",
-    "acesso/onboarding",
     "acesso/convite",
-    "acesso/organizacoes",
     "operacao/perfil",
     "colaboracao/membros",
     "colaboracao/arquivos",
