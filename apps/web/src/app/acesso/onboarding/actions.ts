@@ -78,6 +78,49 @@ export async function submitOnboarding(formData: FormData) {
   if (!response.ok && response.status === 409) {
     const detail = await response.json().catch(() => null) as { detail?: unknown } | null;
     const message = typeof detail?.detail === "string" ? detail.detail : "";
+
+    if (/already completed/i.test(message)) {
+      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:55321";
+      let organizationId: string | undefined;
+
+      if (token && serviceRoleKey) {
+        try {
+          const jwtPayload = JSON.parse(Buffer.from(token.split(".")[1] || "", "base64").toString("utf8")) as { sub?: string };
+          const userId = jwtPayload.sub;
+          if (userId) {
+            const { createClient: createSupabaseClient } = await import("@supabase/supabase-js");
+            const supabaseAdmin = createSupabaseClient(supabaseUrl, serviceRoleKey);
+            const { data: membership } = await supabaseAdmin
+              .from("organization_members")
+              .select("organization_id")
+              .eq("user_id", userId)
+              .eq("status", "active")
+              .limit(1)
+              .maybeSingle();
+
+            if (membership && typeof membership === "object" && "organization_id" in membership && typeof membership.organization_id === "string") {
+              organizationId = membership.organization_id;
+            }
+          }
+        } catch (jwtErr) {
+          console.error("Erro ao decodificar token JWT no onboarding:", jwtErr);
+        }
+      }
+
+      if (organizationId) {
+        const store = await cookies();
+        store.set("bighead-organization-id", organizationId, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: authCookieOptions().secure,
+          path: "/",
+          maxAge: 60 * 60 * 24 * 30
+        });
+      }
+      redirect("/operacao/home");
+    }
+
     if (/slug/i.test(message)) {
       for (let suffix = 2; suffix <= 10; suffix += 1) {
         response = await createOrganization(apiUrl, token, {
