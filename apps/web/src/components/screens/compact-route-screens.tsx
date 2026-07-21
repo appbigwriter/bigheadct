@@ -546,30 +546,144 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
   }
 
   if (route === "conhecimento/ingestao") {
+    const [docs, setDocs] = useState<any[]>([]);
+    const [fileName, setFileName] = useState("");
+    const [chunkSize, setChunkSize] = useState("500");
+    const [ingestStatus, setIngestStatus] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+
+    useEffect(() => {
+      const saved = localStorage.getItem("bighead_documents_local");
+      if (saved) {
+        setDocs(JSON.parse(saved));
+      } else {
+        const defaults = [
+          { id: "1", title: "Internal docs", meta: "Origem: Google Drive · Pronto", detail: "Base de conhecimento interna sobre políticas operacionais da empresa." },
+          { id: "2", title: "Support base", meta: "Origem: Ticketing · Processando", detail: "Histórico de chamados e soluções para atendimento rápido de suporte." },
+          { id: "3", title: "Commercial playbook", meta: "Origem: Manual Comercial · Em revisão", detail: "Regras de qualificação, propostas e técnicas de vendas da BigHead." }
+        ];
+        localStorage.setItem("bighead_documents_local", JSON.stringify(defaults));
+        setDocs(defaults);
+      }
+    }, []);
+
+    const handleIngest = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!fileName) return;
+      setIngestStatus("Processando RAG... 0%");
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 25;
+        setIngestStatus(`Processando RAG... ${progress}%`);
+        if (progress >= 100) {
+          clearInterval(interval);
+          const newItem = {
+            id: String(Date.now()),
+            title: fileName,
+            meta: `Origem: Upload Local · Pronto`,
+            detail: `Documento ingerido em chunks de ${chunkSize} caracteres para recuperação semântica.`
+          };
+          const updated = [...docs, newItem];
+          setDocs(updated);
+          localStorage.setItem("bighead_documents_local", JSON.stringify(updated));
+          setIngestStatus("Documento processado com sucesso!");
+          setFileName("");
+        }
+      }, 200);
+    };
+
+    const handleSearch = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!searchQuery) {
+        setSearchResults([]);
+        return;
+      }
+      const matches = docs.filter(d => 
+        d.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        d.detail.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      
+      const results = matches.map((d, index) => {
+        const score = (0.95 - (index * 0.04)).toFixed(2);
+        return {
+          id: d.id,
+          source: d.title,
+          score: `${score} (Excelente)`,
+          chunkText: `[Chunk #${index + 1}] ...${d.detail.slice(0, 150)}...`
+        };
+      });
+      setSearchResults(results);
+    };
+
     return (
       <main className="bh-compact-page">
         <header className="bh-auth-heading">
           <span className="bh-eyebrow">Conhecimento</span>
           <h1>Ingestão e Busca Semântica</h1>
-          <p>Central de ingestão de documentos para RAG e testes de busca vetorial do monorepo.</p>
+          <p>Central de processamento RAG e testes de recuperação semântica em base vetorial local.</p>
         </header>
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", width: "100%", marginTop: "1rem" }}>
-          <CompactSection title="Coluna 1: Ingestão e Processamento RAG" description="Gerencie o upload de arquivos, divisão em blocos (chunks), erros de parsing e reprocessamento assistido.">
-            <div className="bh-list-panel">
-              <button className="bh-row-button" type="button"><strong>Upload de Documento</strong><span>Formatos: PDF, TXT, DOCX · Max 20MB</span></button>
-              <button className="bh-row-button" type="button"><strong>Status dos Chunks</strong><span>38 blocos gerados · status: pronto</span></button>
-              <button className="bh-row-button" type="button"><strong>Erros de Parse</strong><span>Nenhum erro ativo no processamento recente</span></button>
-              <button className="bh-row-button" type="button"><strong>Reprocessamento RAG</strong><span>Forçar reindexação e re-chunking manual</span></button>
+          
+          <CompactSection title="Coluna 1: Processamento RAG" description="Simule o upload, quebra em chunks e indexação de novos documentos.">
+            <form onSubmit={handleIngest} className="bh-auth-form">
+              <label className="bh-field">
+                <span>Nome do Arquivo</span>
+                <input required value={fileName} onChange={(e) => setFileName(e.target.value)} placeholder="ex: manual_de_vendas.pdf" />
+              </label>
+              <label className="bh-field">
+                <span>Tamanho do Chunk (Caracteres)</span>
+                <select value={chunkSize} onChange={(e) => setChunkSize(e.target.value)} style={{ width: "100%", padding: "0.5rem", background: "var(--field-bg)", border: "1px solid var(--border)", color: "var(--foreground)", borderRadius: "4px" }}>
+                  <option value="250">250 caracteres</option>
+                  <option value="500">500 caracteres (Padrão)</option>
+                  <option value="1000">1000 caracteres</option>
+                </select>
+              </label>
+              <Button type="submit">Iniciar Processamento RAG</Button>
+              {ingestStatus ? <p style={{ marginTop: "1rem", color: "var(--accent)", fontWeight: "600" }}>{ingestStatus}</p> : null}
+            </form>
+
+            <div style={{ marginTop: "2rem" }}>
+              <h4>Documentos Ingeridos ({docs.length})</h4>
+              <div className="bh-list-panel" style={{ maxHeight: "180px", overflowY: "auto", marginTop: "0.5rem" }}>
+                {docs.map(d => (
+                  <div key={d.id} className="bh-mini-card" style={{ padding: "0.5rem", marginBottom: "0.5rem" }}>
+                    <strong>{d.title}</strong>
+                    <small>{d.meta}</small>
+                  </div>
+                ))}
+              </div>
             </div>
           </CompactSection>
-          <CompactSection title="Coluna 2: Busca Semântica & Recuperação" description="Consulte a base vetorial, refine os filtros de busca e acompanhe a depuração de recuperação.">
-            <div className="bh-list-panel">
-              <button className="bh-row-button" type="button"><strong>Score de Relevância</strong><span>Top match score: 0.91 (Excelente)</span></button>
-              <button className="bh-row-button" type="button"><strong>Filtros Avançados</strong><span>Tenant, frescor (freshness), fonte e metadados</span></button>
-              <button className="bh-row-button" type="button"><strong>Nível de Confidencialidade</strong><span>Restrito · Acesso sob política do tenant</span></button>
-              <button className="bh-row-button" type="button"><strong>Depuração de Recuperação (Debug)</strong><span>Visualização da fonte e caminhos de embeddings</span></button>
+
+          <CompactSection title="Coluna 2: Consulta Semântica (RAG)" description="Consulte a base de chunks indexada usando linguagem natural.">
+            <form onSubmit={handleSearch} className="bh-auth-form" style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+              <label className="bh-field" style={{ flex: 1 }}>
+                <span>Digite sua consulta</span>
+                <input required value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="ex: vendas, suporte, compliance..." />
+              </label>
+              <Button type="submit">Buscar</Button>
+            </form>
+
+            <div style={{ marginTop: "2rem" }}>
+              <h4>Resultados de Recuperação ({searchResults.length})</h4>
+              <div className="bh-list-panel" style={{ maxHeight: "280px", overflowY: "auto", marginTop: "0.5rem" }}>
+                {searchResults.map((r, i) => (
+                  <div key={r.id + i} className="bh-mini-card" style={{ padding: "0.75rem", marginBottom: "0.5rem", borderLeft: "3px solid var(--accent)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <strong>Fonte: {r.source}</strong>
+                      <span style={{ color: "var(--accent)", fontSize: "0.85rem" }}>Score: {r.score}</span>
+                    </div>
+                    <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginTop: "0.25rem" }}>{r.chunkText}</p>
+                  </div>
+                ))}
+                {searchQuery && searchResults.length === 0 ? <p className="bh-state-panel">Nenhum chunk correspondente encontrado.</p> : null}
+                {!searchQuery ? <p className="bh-state-panel">Digite um termo de busca e clique em Buscar.</p> : null}
+              </div>
             </div>
           </CompactSection>
+
         </div>
       </main>
     );
