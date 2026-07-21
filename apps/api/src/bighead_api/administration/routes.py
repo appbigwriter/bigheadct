@@ -303,7 +303,7 @@ async def archive_project(
 
 @router.get("/teams", response_model=TeamListResponse, tags=["teams"])
 async def teams(
-    context: TenantContext,
+    context: ManagerContext,
     repo: Annotated[AdministrationRepository, Depends(repository)],
 ) -> TeamListResponse:
     return await repo.teams(_user(context), context.organization_id)
