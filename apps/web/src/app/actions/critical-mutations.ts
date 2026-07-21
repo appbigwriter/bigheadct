@@ -288,3 +288,33 @@ export async function deleteTeam(form: FormData): Promise<MutationResult> {
   } catch (error) { return result(error); }
 }
 
+export async function updateOrganization(form: FormData): Promise<MutationResult> {
+  try {
+    const organizationId = text(form, "organizationId");
+    const name = text(form, "name");
+    const domain = text(form, "domain");
+    if (!organizationId) return { ok: false, status: 422, message: "ID da organizacao e obrigatorio." };
+    if (shouldUseMockWorkspace()) return { ok: true, status: 200, message: "Organizacao atualizada localmente." };
+
+    // Busca o estado atual da org para obter o expected_updated_at
+    const current = await authenticatedApi<{ updated_at?: string; updatedAt?: string }>(`/v1/organizations/${encodeURIComponent(organizationId)}`, {
+      method: "GET",
+      organizationId
+    });
+    const expectedUpdatedAt = current.updatedAt ?? current.updated_at ?? new Date().toISOString();
+
+    const payload: Record<string, unknown> = { expected_updated_at: expectedUpdatedAt };
+    if (name) payload.branding = { name };
+    if (domain) payload.domains = [domain];
+
+    await authenticatedApi(`/v1/organizations/${encodeURIComponent(organizationId)}`, {
+      method: "PATCH",
+      organizationId,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    revalidatePath("/", "layout");
+    return { ok: true, status: 200, message: "Organizacao atualizada com sucesso." };
+  } catch (error) { return result(error); }
+}
+

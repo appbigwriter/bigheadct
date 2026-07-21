@@ -1,11 +1,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Button } from "@bigheadct/ui";
 import { Building2, Plus, ArrowRight } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-import { getValidatedAccessToken, authenticatedApi } from "@/lib/server-api-client";
+import { authenticatedApi } from "@/lib/server-api-client";
 import { switchTenant } from "@/app/actions/critical-mutations";
 
 export default async function OrganizacoesPage() {
@@ -13,12 +12,15 @@ export default async function OrganizacoesPage() {
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims) redirect("/login");
 
+  const cookieStore = await cookies();
+  const currentOrgId = cookieStore.get("bighead-organization-id")?.value ?? "";
+
   let organizations: any[] = [];
   let errorMsg = "";
   try {
-    const res = await authenticatedApi<{ items: any[] }>("/v1/organizations");
-    // O endpoint /v1/organizations retorna { items: [...] } com as organizacoes do usuario
-    organizations = res.items || [];
+    const res = await authenticatedApi<{ organizations: any[]; items?: any[] }>("/v1/organizations");
+    // O endpoint /v1/organizations retorna { organizations: [...] }
+    organizations = res.organizations || res.items || [];
   } catch (err: any) {
     errorMsg = "Nao foi possivel carregar suas organizacoes da API real.";
     console.error(err);
@@ -49,7 +51,9 @@ export default async function OrganizacoesPage() {
         ) : null}
 
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "2rem" }}>
-          {organizations.map((org) => (
+          {organizations.map((org) => {
+            const isActive = org.id === currentOrgId;
+            return (
             <form key={org.id} action={handleSelectOrg}>
               <input type="hidden" name="organizationId" value={org.id} />
               <button
@@ -60,30 +64,36 @@ export default async function OrganizacoesPage() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "1.25rem",
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.06)",
+                  background: isActive ? "rgba(4,217,255,0.06)" : "rgba(255,255,255,0.03)",
+                  border: `1px solid ${isActive ? "rgba(4,217,255,0.35)" : "rgba(255,255,255,0.06)"}`,
                   borderRadius: "1rem",
                   color: "#fff",
-                  cursor: "pointer",
+                  cursor: isActive ? "default" : "pointer",
                   textAlign: "left",
                   transition: "all 0.2s ease",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                  <div style={{ width: "42px", height: "42px", borderRadius: "50%", background: "linear-gradient(135deg, rgba(4,217,255,0.2), rgba(0,0,0,0.5))", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(4,217,255,0.3)" }}>
+                  <div style={{ width: "42px", height: "42px", borderRadius: "50%", background: isActive ? "linear-gradient(135deg, rgba(4,217,255,0.35), rgba(0,0,0,0.5))" : "linear-gradient(135deg, rgba(4,217,255,0.2), rgba(0,0,0,0.5))", display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${isActive ? "rgba(4,217,255,0.6)" : "rgba(4,217,255,0.3)"}` }}>
                     <Building2 size={18} style={{ color: "var(--cyan)" }} />
                   </div>
                   <div>
-                    <strong style={{ display: "block", fontSize: "1.05rem" }}>{org.name}</strong>
+                    <strong style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.05rem" }}>
+                      {org.name}
+                      {isActive && (
+                        <span style={{ fontSize: "0.7rem", padding: "0.1rem 0.4rem", borderRadius: "0.25rem", background: "rgba(4,217,255,0.15)", color: "var(--cyan)", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em" }}>Ativa</span>
+                      )}
+                    </strong>
                     <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>slug: {org.slug}</span>
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", color: "var(--muted)" }}>
-                  <ArrowRight size={18} />
+                <div style={{ display: "flex", alignItems: "center", color: isActive ? "var(--cyan)" : "var(--muted)" }}>
+                  {isActive ? <span style={{ fontSize: "0.8rem" }}>Selecionada</span> : <ArrowRight size={18} />}
                 </div>
               </button>
             </form>
-          ))}
+            );
+          })}
 
           {organizations.length === 0 && !errorMsg ? (
             <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--muted)" }}>

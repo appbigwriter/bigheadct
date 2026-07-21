@@ -252,17 +252,76 @@ export function CompactRouteScreens({ screen, searchParams = {}, snapshot }: Com
   }
 
   if (route === "acesso/organizacoes") {
+    const orgOptions = snapshot?.organizationOptions ?? [];
+    const currentOrgId = snapshot?.currentOrganizationId ?? "";
+    const currentOrgName = snapshot?.currentOrganization ?? "";
+
+    const handleSwitchOrg = async (orgId: string) => {
+      if (orgId === currentOrgId) return;
+      const { switchTenant } = await import("@/app/actions/critical-mutations");
+      const form = new FormData();
+      form.append("organizationId", orgId);
+      const res = await switchTenant(form);
+      if (res.ok) {
+        window.location.href = "/operacao/home";
+      } else {
+        alert(res.message);
+      }
+    };
+
     return (
       <main className="bh-compact-page">
         <header className="bh-auth-heading">
           <span className="bh-eyebrow">Acesso</span>
-          <h1>{titleFor(screen)}</h1>
-          <p>This page was absorbed by the organization selector in the shell.</p>
+          <h1>Minhas Organizacoes</h1>
+          <p>Selecione a organizacao ativa ou gerencie o acesso ao workspace. A organizacao ativa define o contexto de todos os dados.</p>
         </header>
-        <Card>
-          <p>Use the selector at the top of the app to switch organizations instead of keeping a dedicated page for that.</p>
-          <Link href="/operacao/home" prefetch={false}>Back to the workspace</Link>
-        </Card>
+        <CompactSection title="Organizacoes disponíveis" description="Clique para trocar a organizacao ativa.">
+          <div className="bh-list-panel">
+            {orgOptions.length > 0 ? orgOptions.map((org: any) => (
+              <div key={org.id} className="bh-row-button" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem 1rem" }}>
+                <div>
+                  <strong style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {org.name}
+                    {org.id === currentOrgId && (
+                      <span className="bh-chip" style={{ background: "rgba(99,179,237,0.15)", color: "#63b3ed", fontSize: "0.7rem", padding: "0.1rem 0.4rem" }}>Ativa</span>
+                    )}
+                  </strong>
+                  <span style={{ display: "block", fontSize: "0.85rem", color: "var(--muted)" }}>
+                    {org.status ? `Status: ${org.status}` : "Membro ativo"}
+                  </span>
+                </div>
+                {org.id !== currentOrgId && (
+                  <Button onClick={() => handleSwitchOrg(org.id)} tone="secondary" style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem" }}>Trocar</Button>
+                )}
+              </div>
+            )) : (
+              <div style={{ padding: "1rem", color: "var(--muted)", textAlign: "center" }}>
+                <p>Organizacao atual: <strong>{currentOrgName || "Nao definida"}</strong></p>
+                <p style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>Nenhuma outra organizacao disponível para este usuario.</p>
+              </div>
+            )}
+          </div>
+          {orgOptions.length === 0 && !snapshot && (
+            <p style={{ padding: "1rem", color: "var(--muted)", fontSize: "0.85rem" }}>Use o seletor no topo do app para trocar de organizacao.</p>
+          )}
+        </CompactSection>
+        <CompactSection title="Organizacao atual" description="Dados da organizacao ativa no momento.">
+          <div className="bh-list-panel">
+            <button className="bh-row-button" type="button">
+              <strong>Nome</strong>
+              <span>{currentOrgName || "Nao carregado"}</span>
+            </button>
+            <button className="bh-row-button" type="button">
+              <strong>ID</strong>
+              <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{currentOrgId || "Sem ID"}</span>
+            </button>
+          </div>
+          <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem" }}>
+            <Link href="/administracao/organizacao" className="bh-chip bh-chip-accent" style={{ textDecoration: "none", padding: "0.5rem 1rem" }}>Configurar organizacao</Link>
+            <Link href="/operacao/home" className="bh-chip" style={{ textDecoration: "none", padding: "0.5rem 1rem", background: "rgba(255,255,255,0.05)" }}>Voltar ao workspace</Link>
+          </div>
+        </CompactSection>
       </main>
     );
   }
@@ -1356,27 +1415,61 @@ export function CompactRouteScreens({ screen, searchParams = {}, snapshot }: Com
   }
 
   if (route === "administracao/organizacao") {
+    const orgName = snapshot?.currentOrganization ?? "";
+    const orgId = snapshot?.currentOrganizationId ?? "";
+    const orgOpts = snapshot?.organizationOptions ?? [];
+    const currentOrgData = orgOpts.find((o: any) => o.id === orgId);
+
+    const handleUpdateOrg = async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      if (!orgId) return alert("ID da organizacao nao encontrado.");
+      const form = new FormData(e.currentTarget);
+      const { updateOrganization } = await import("@/app/actions/critical-mutations");
+      const actionForm = new FormData();
+      actionForm.append("organizationId", orgId);
+      actionForm.append("name", (form.get("name") as string) || "");
+      actionForm.append("domain", (form.get("domain") as string) || "");
+      const res = await updateOrganization(actionForm);
+      if (res.ok) {
+        alert(res.message);
+        window.location.reload();
+      } else {
+        alert(res.message);
+      }
+    };
+
     return (
       <main className="bh-compact-page">
         <header className="bh-auth-heading">
           <span className="bh-eyebrow">Administration</span>
           <h1>{titleFor(screen)}</h1>
-          <p>Only organization branding, defaults, and current state stay on screen.</p>
+          <p>Configuracao de identidade, dominio e dados da organizacao ativa: <strong>{orgName || "Nao carregada"}</strong></p>
         </header>
         <div className="bh-compact-grid">
-          <CompactSection title="Branding" description="Name, logo, and workspace identity.">
-            <form className="bh-auth-form">
-              <Field name="name" label="Organization name" defaultValue="Atlas Local" />
-              <Field name="slug" label="Slug" defaultValue="atlas-local" />
-              <Field name="domain" label="Primary domain" placeholder="atlas.local" />
-              <Button type="submit">Save branding</Button>
+          <CompactSection title="Identidade" description="Nome e dominio principal da organizacao.">
+            <form className="bh-auth-form" onSubmit={handleUpdateOrg}>
+              <Field name="name" label="Nome da organizacao" defaultValue={orgName} placeholder="Atlas Local" />
+              <Field name="domain" label="Dominio principal" defaultValue={currentOrgData?.domain ?? ""} placeholder="atlas.local" />
+              <Button type="submit">Salvar alteracoes</Button>
             </form>
           </CompactSection>
-          <CompactSection title="Defaults" description="Timezone, locale, and entry behavior.">
+          <CompactSection title="Identificacao" description="Dados imutaveis e metadados da organizacao atual.">
             <div className="bh-list-panel">
-              <button className="bh-row-button" type="button"><strong>Timezone</strong><span>America/Sao_Paulo</span></button>
-              <button className="bh-row-button" type="button"><strong>Locale</strong><span>pt-BR</span></button>
-              <button className="bh-row-button" type="button"><strong>Entry policy</strong><span>Require organization selector</span></button>
+              <button className="bh-row-button" type="button">
+                <strong>ID da Organizacao</strong>
+                <span style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{orgId || "Nao disponivel"}</span>
+              </button>
+              <button className="bh-row-button" type="button">
+                <strong>Status</strong>
+                <span>{currentOrgData?.status || "active"}</span>
+              </button>
+              <button className="bh-row-button" type="button">
+                <strong>Organizacoes vinculadas</strong>
+                <span>{orgOpts.length} organizacao(es) na conta</span>
+              </button>
+            </div>
+            <div style={{ marginTop: "1rem" }}>
+              <Link href="/acesso/organizacoes" className="bh-chip" style={{ textDecoration: "none", padding: "0.5rem 1rem", background: "rgba(255,255,255,0.05)" }}>Trocar organizacao</Link>
             </div>
           </CompactSection>
         </div>
