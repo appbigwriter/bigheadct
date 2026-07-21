@@ -21,7 +21,8 @@ const focusableSelector = [
 
 const routeIcons: Record<ShellIcon, typeof Home> = {
   home: Home, messages: MessageSquare, tasks: KanbanSquare, plus: Plus,
-  approvals: FileCheck2, leads: UsersRound, pipeline: Target
+  approvals: FileCheck2, leads: UsersRound, pipeline: Target,
+  infra: Building2
 };
 
 const groupIcons: Record<string, typeof Home> = {
@@ -138,6 +139,7 @@ export function WorkspaceNavigation({
               <span className={styles.groupLabel}>{group.label}</span>
               {group.routes.map((route) => {
                 const Icon = route.icon ? routeIcons[route.icon] : FolderSearch;
+                const isExternal = route.href.startsWith("http://") || route.href.startsWith("https://");
                 return <Link
                   aria-current={pathname === route.href || pathname.startsWith(`${route.href}/`) ? "page" : undefined}
                   className={styles.navLink}
@@ -145,6 +147,8 @@ export function WorkspaceNavigation({
                   key={route.href}
                   onClick={close}
                   prefetch={false}
+                  target={isExternal ? "_blank" : undefined}
+                  rel={isExternal ? "noopener noreferrer" : undefined}
                 >
                   <Icon aria-hidden="true" className={styles.navIcon} size={17} />
                   <span>{route.label}</span>
@@ -160,9 +164,20 @@ export function WorkspaceNavigation({
               return <details className={styles.moduleGroup} key={group.label} open={current || undefined}>
                 <summary><Icon aria-hidden="true" size={17} /><span>{group.label}</span><ChevronDown aria-hidden="true" className={styles.moduleChevron} size={15} /></summary>
                 <div className={styles.moduleRoutes}>
-                {group.routes.map((route) => (
-                  <Link aria-current={pathname === route.href ? "page" : undefined} href={route.href} key={route.href} onClick={close} prefetch={false}>{route.label}</Link>
-                ))}
+                {group.routes.map((route) => {
+                  const isExternal = route.href.startsWith("http://") || route.href.startsWith("https://");
+                  return <Link 
+                    aria-current={pathname === route.href ? "page" : undefined} 
+                    href={route.href} 
+                    key={route.href} 
+                    onClick={close} 
+                    prefetch={false}
+                    target={isExternal ? "_blank" : undefined}
+                    rel={isExternal ? "noopener noreferrer" : undefined}
+                  >
+                    {route.label}
+                  </Link>;
+                })}
                 </div>
               </details>;
             })}

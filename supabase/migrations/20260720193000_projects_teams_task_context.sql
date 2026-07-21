@@ -66,4 +66,9 @@ create index if not exists tasks_team_idx on public.tasks(organization_id, team_
 create index if not exists projects_org_idx on public.projects(organization_id, created_at desc);
 create index if not exists teams_status_idx on public.teams(status, created_at desc);
 
+grant select, insert, update, delete on public.teams to authenticated;
+grant select, insert, update, delete on public.team_organizations to authenticated;
+grant select, insert, update, delete on public.team_projects to authenticated;
+grant select, insert, update, delete on public.team_members to authenticated;
+
 commit;

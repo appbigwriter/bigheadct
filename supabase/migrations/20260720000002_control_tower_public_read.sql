@@ -17,3 +17,9 @@ on public.templates
 for select
 to authenticated
 using (true);
+
+grant select, insert, update, delete on public.projects to authenticated;
+grant select, insert, update, delete on public.templates to authenticated;
+grant select, insert, update, delete on public.provisioning_jobs to authenticated;
+grant select, insert, update, delete on public.audit_logs to authenticated;
+

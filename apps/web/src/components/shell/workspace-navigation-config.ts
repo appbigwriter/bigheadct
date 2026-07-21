@@ -1,8 +1,10 @@
 import { areaOrder, screens, type ScreenDefinition } from "@/lib/screen-catalog";
 
-export type ShellIcon = "home" | "messages" | "tasks" | "plus" | "approvals" | "leads" | "pipeline";
+export type ShellIcon = "home" | "messages" | "tasks" | "plus" | "approvals" | "leads" | "pipeline" | "infra";
 export type ShellRoute = { label: string; href: string; icon?: ShellIcon };
 export type ShellGroup = { label: string; routes: ShellRoute[] };
+
+const controlTowerUrl = process.env.NEXT_PUBLIC_CONTROL_TOWER_URL || "http://localhost:3000";
 
 export const primaryNavigation: ShellGroup[] = [
   { label: "Visao geral", routes: [{ label: "Inicio", href: "/operacao/home", icon: "home" }] },
@@ -20,6 +22,12 @@ export const primaryNavigation: ShellGroup[] = [
     routes: [
       { label: "Leads", href: "/comercial/leads", icon: "leads" },
       { label: "Pipeline", href: "/comercial/pipeline", icon: "pipeline" }
+    ]
+  },
+  {
+    label: "Infraestrutura",
+    routes: [
+      { label: "Control Tower", href: controlTowerUrl, icon: "infra" }
     ]
   }
 ];
