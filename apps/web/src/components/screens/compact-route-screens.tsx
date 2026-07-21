@@ -436,27 +436,109 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
   }
 
   if (route === "conhecimento/biblioteca") {
+    const [docs, setDocs] = useState<any[]>([]);
+    const [selectedDoc, setSelectedDoc] = useState<any | null>(null);
+    const [title, setTitle] = useState("");
+    const [meta, setMeta] = useState("");
+    const [detail, setDetail] = useState("");
+
+    useEffect(() => {
+      const saved = localStorage.getItem("bighead_documents_local");
+      if (saved) {
+        setDocs(JSON.parse(saved));
+      } else {
+        const defaults = [
+          { id: "1", title: "Internal docs", meta: "Origem: Google Drive · Pronto", detail: "Base de conhecimento interna sobre políticas operacionais da empresa." },
+          { id: "2", title: "Support base", meta: "Origem: Ticketing · Processando", detail: "Histórico de chamados e soluções para atendimento rápido de suporte." },
+          { id: "3", title: "Commercial playbook", meta: "Origem: Manual Comercial · Em revisão", detail: "Regras de qualificação, propostas e técnicas de vendas da BigHead." }
+        ];
+        localStorage.setItem("bighead_documents_local", JSON.stringify(defaults));
+        setDocs(defaults);
+      }
+    }, []);
+
+    const handleSave = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!title) return;
+      let updated;
+      if (selectedDoc) {
+        updated = docs.map(d => d.id === selectedDoc.id ? { ...d, title, meta, detail } : d);
+      } else {
+        const newItem = { id: String(Date.now()), title, meta, detail };
+        updated = [...docs, newItem];
+      }
+      setDocs(updated);
+      localStorage.setItem("bighead_documents_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleDelete = (id: string) => {
+      const updated = docs.filter(d => d.id !== id);
+      setDocs(updated);
+      localStorage.setItem("bighead_documents_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleEdit = (d: any) => {
+      setSelectedDoc(d);
+      setTitle(d.title);
+      setMeta(d.meta);
+      setDetail(d.detail);
+    };
+
+    const handleCancel = () => {
+      setSelectedDoc(null);
+      setTitle("");
+      setMeta("");
+      setDetail("");
+    };
+
     return (
       <main className="bh-compact-page">
         <header className="bh-auth-heading">
-          <span className="bh-eyebrow">Knowledge</span>
-          <h1>{titleFor(screen)}</h1>
-          <p>Catalog only: documents, ingestion state, owner, review date, and the next action.</p>
+          <span className="bh-eyebrow">Conhecimento</span>
+          <h1>Biblioteca de Conhecimento</h1>
+          <p>Gerencie seus documentos, bases de dados RAG, origens e o status de ingestão local.</p>
         </header>
+
         <div className="bh-compact-grid">
-          <CompactSection title="Document catalog" description="Keep the list centered on status and responsibility.">
+          <CompactSection title="Documentos Registrados" description="Selecione um documento para editar ou excluir da biblioteca local.">
             <div className="bh-list-panel">
-              <button className="bh-row-button" type="button"><strong>Ready</strong><span>Document, owner, and last review</span></button>
-              <button className="bh-row-button" type="button"><strong>Processing</strong><span>Chunking, parse, or classify in progress</span></button>
-              <button className="bh-row-button" type="button"><strong>Failed</strong><span>Needs correction before search can use it</span></button>
+              {docs.map((d) => (
+                <button key={d.id} className="bh-row-button" type="button" onClick={() => handleEdit(d)}>
+                  <strong>{d.title}</strong>
+                  <span>{d.meta}</span>
+                  <small>{d.detail}</small>
+                </button>
+              ))}
+              {docs.length === 0 ? <p className="bh-state-panel">Nenhum documento disponível.</p> : null}
             </div>
           </CompactSection>
-          <CompactSection title="Ingestion summary" description="Show the operational signals without adding unrelated controls.">
-            <div className="bh-list-panel">
-              <button className="bh-row-button" type="button"><strong>Owner</strong><span>Who is accountable for the source</span></button>
-              <button className="bh-row-button" type="button"><strong>Review date</strong><span>Last validation and next review due</span></button>
-              <button className="bh-row-button" type="button"><strong>Next action</strong><span>Upload, reprocess, or archive</span></button>
-            </div>
+
+          <CompactSection title={selectedDoc ? "Editar Documento" : "Incluir Documento"} description="Preencha as informações para registrar o documento no repositório.">
+            <form className="bh-auth-form" onSubmit={handleSave}>
+              <label className="bh-field">
+                <span>Título</span>
+                <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ex: Manual Financeiro" />
+              </label>
+              <label className="bh-field">
+                <span>Meta (Origem / Status)</span>
+                <input required value={meta} onChange={(e) => setMeta(e.target.value)} placeholder="ex: Origem: File Upload · Pronto" />
+              </label>
+              <label className="bh-field">
+                <span>Detalhes / Descrição</span>
+                <textarea required value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="ex: Diretrizes de reembolso..." style={{ width: "100%", minHeight: "80px", background: "var(--field-bg)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0.5rem", borderRadius: "4px" }} />
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <Button type="submit" tone="primary">Salvar</Button>
+                {selectedDoc ? (
+                  <>
+                    <Button type="button" tone="risk" onClick={() => handleDelete(selectedDoc.id)}>Excluir</Button>
+                    <Button type="button" tone="secondary" onClick={handleCancel}>Cancelar</Button>
+                  </>
+                ) : null}
+              </div>
+            </form>
           </CompactSection>
         </div>
       </main>
@@ -494,26 +576,109 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
   }
 
   if (route === "conhecimento/memoria") {
+    const [memories, setMemories] = useState<any[]>([]);
+    const [selectedMem, setSelectedMem] = useState<any | null>(null);
+    const [title, setTitle] = useState("");
+    const [meta, setMeta] = useState("");
+    const [detail, setDetail] = useState("");
+
+    useEffect(() => {
+      const saved = localStorage.getItem("bighead_memories_local");
+      if (saved) {
+        setMemories(JSON.parse(saved));
+      } else {
+        const defaults = [
+          { id: "1", title: "Fact", meta: "Valid until reviewed", detail: "Atlas Operações belongs to the main group." },
+          { id: "2", title: "Inference", meta: "Derived from context", detail: "Customer acquisition cost is under budget thresholds." },
+          { id: "3", title: "Decision", meta: "Stored as auditable", detail: "Risk policy version 12 approved by governance board." }
+        ];
+        localStorage.setItem("bighead_memories_local", JSON.stringify(defaults));
+        setMemories(defaults);
+      }
+    }, []);
+
+    const handleSave = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!title) return;
+      let updated;
+      if (selectedMem) {
+        updated = memories.map(m => m.id === selectedMem.id ? { ...m, title, meta, detail } : m);
+      } else {
+        const newItem = { id: String(Date.now()), title, meta, detail };
+        updated = [...memories, newItem];
+      }
+      setMemories(updated);
+      localStorage.setItem("bighead_memories_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleDelete = (id: string) => {
+      const updated = memories.filter(m => m.id !== id);
+      setMemories(updated);
+      localStorage.setItem("bighead_memories_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleEdit = (m: any) => {
+      setSelectedMem(m);
+      setTitle(m.title);
+      setMeta(m.meta);
+      setDetail(m.detail);
+    };
+
+    const handleCancel = () => {
+      setSelectedMem(null);
+      setTitle("");
+      setMeta("");
+      setDetail("");
+    };
+
     return (
       <main className="bh-compact-page">
         <header className="bh-auth-heading">
-          <span className="bh-eyebrow">Knowledge</span>
-          <h1>{titleFor(screen)}</h1>
-          <p>Operational memory only: facts, inferences, decisions, validity, and contestation.</p>
+          <span className="bh-eyebrow">Conhecimento</span>
+          <h1>Memória Operacional</h1>
+          <p>Visualize, insira, edite e conteste fatos, inferências e decisões da IA local.</p>
         </header>
+
         <div className="bh-compact-grid">
-          <CompactSection title="Memory records" description="Manage the records that can exist as facts, inferences, or decisions.">
+          <CompactSection title="Itens na Memória" description="Selecione um fato ou inferência para gerenciar seus registros locais.">
             <div className="bh-list-panel">
-              <button className="bh-row-button" type="button"><strong>Fact</strong><span>Valid until reviewed</span></button>
-              <button className="bh-row-button" type="button"><strong>Inference</strong><span>Derived from evidence and context</span></button>
-              <button className="bh-row-button" type="button"><strong>Decision</strong><span>Stored as an auditable outcome</span></button>
+              {memories.map((m) => (
+                <button key={m.id} className="bh-row-button" type="button" onClick={() => handleEdit(m)}>
+                  <strong>{m.title}</strong>
+                  <span>{m.meta}</span>
+                  <small>{m.detail}</small>
+                </button>
+              ))}
+              {memories.length === 0 ? <p className="bh-state-panel">Nenhum registro de memória disponível.</p> : null}
             </div>
           </CompactSection>
-          <CompactSection title="Validity and contestation" description="Keep validity window and contestation state visible.">
-            <div className="bh-list-panel">
-              <button className="bh-row-button" type="button"><strong>Validity</strong><span>Current, expiring, or expired</span></button>
-              <button className="bh-row-button" type="button"><strong>Contestation</strong><span>Open, reviewed, or resolved</span></button>
-            </div>
+
+          <CompactSection title={selectedMem ? "Editar Item de Memória" : "Incluir Novo Fato"} description="Preencha os dados da asserção de memória operacional.">
+            <form className="bh-auth-form" onSubmit={handleSave}>
+              <label className="bh-field">
+                <span>Tipo (Fact, Inference, Decision)</span>
+                <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ex: Fact" />
+              </label>
+              <label className="bh-field">
+                <span>Validade / Estado</span>
+                <input required value={meta} onChange={(e) => setMeta(e.target.value)} placeholder="ex: Valid until reviewed" />
+              </label>
+              <label className="bh-field">
+                <span>Conteúdo do Fato</span>
+                <textarea required value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="ex: O limite de requisições foi excedido..." style={{ width: "100%", minHeight: "80px", background: "var(--field-bg)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0.5rem", borderRadius: "4px" }} />
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <Button type="submit" tone="primary">Salvar</Button>
+                {selectedMem ? (
+                  <>
+                    <Button type="button" tone="risk" onClick={() => handleDelete(selectedMem.id)}>Excluir</Button>
+                    <Button type="button" tone="secondary" onClick={handleCancel}>Cancelar</Button>
+                  </>
+                ) : null}
+              </div>
+            </form>
           </CompactSection>
         </div>
       </main>
@@ -719,57 +884,330 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
   }
 
   if (route === "automacao/prompts") {
+    const [prompts, setPrompts] = useState<any[]>([]);
+    const [selectedPrompt, setSelectedPrompt] = useState<any | null>(null);
+    const [title, setTitle] = useState("");
+    const [meta, setMeta] = useState("");
+    const [detail, setDetail] = useState("");
+
+    useEffect(() => {
+      const saved = localStorage.getItem("bighead_prompts_local");
+      if (saved) {
+        setPrompts(JSON.parse(saved));
+      } else {
+        const defaults = [
+          { id: "1", title: "Lead qualification", meta: "Versão v18 · Ativo", detail: "Prompt versionado para triagem de vendas e análise de ICP." },
+          { id: "2", title: "Task summary", meta: "Versão v4 · Ativo", detail: "Transforma o histórico de execuções de um agente em sumário executivo." },
+          { id: "3", title: "Policy check", meta: "Versão v12 · Ativo", detail: "Valida conformidade com políticas de privacidade e tom de voz." }
+        ];
+        localStorage.setItem("bighead_prompts_local", JSON.stringify(defaults));
+        setPrompts(defaults);
+      }
+    }, []);
+
+    const handleSave = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!title) return;
+      let updated;
+      if (selectedPrompt) {
+        updated = prompts.map(p => p.id === selectedPrompt.id ? { ...p, title, meta, detail } : p);
+      } else {
+        const newItem = { id: String(Date.now()), title, meta, detail };
+        updated = [...prompts, newItem];
+      }
+      setPrompts(updated);
+      localStorage.setItem("bighead_prompts_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleDelete = (id: string) => {
+      const updated = prompts.filter(p => p.id !== id);
+      setPrompts(updated);
+      localStorage.setItem("bighead_prompts_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleEdit = (p: any) => {
+      setSelectedPrompt(p);
+      setTitle(p.title);
+      setMeta(p.meta);
+      setDetail(p.detail);
+    };
+
+    const handleCancel = () => {
+      setSelectedPrompt(null);
+      setTitle("");
+      setMeta("");
+      setDetail("");
+    };
+
     return (
       <main className="bh-compact-page">
-        <header className="bh-auth-heading" style={{ marginBottom: "1rem" }}>
+        <header className="bh-auth-heading">
           <span className="bh-eyebrow">Automação</span>
           <h1>Biblioteca de Prompts</h1>
+          <p>Consulte, crie, edite e versionar prompts operacionais para os agentes virtuais.</p>
         </header>
-        <div style={{ marginBottom: "1.5rem" }}>
-          <Button onClick={() => alert("Simulação: incluir prompt acionado")} tone="primary">Incluir Prompt</Button>
-        </div>
+
         <div className="bh-compact-grid">
-          <MiniCard title="Lead qualification" meta="Versão v18 · Ativo" detail="Prompt versionado para triagem de vendas e análise de ICP." />
-          <MiniCard title="Task summary" meta="Versão v4 · Ativo" detail="Transforma o histórico de execuções de um agente em sumário executivo." />
-          <MiniCard title="Policy check" meta="Versão v12 · Ativo" detail="Valida conformidade com políticas de privacidade e tom de voz." />
+          <CompactSection title="Prompts Cadastrados" description="Selecione um prompt para editar ou excluir localmente.">
+            <div className="bh-list-panel">
+              {prompts.map((p) => (
+                <button key={p.id} className="bh-row-button" type="button" onClick={() => handleEdit(p)}>
+                  <strong>{p.title}</strong>
+                  <span>{p.meta}</span>
+                  <small>{p.detail}</small>
+                </button>
+              ))}
+              {prompts.length === 0 ? <p className="bh-state-panel">Nenhum prompt disponível.</p> : null}
+            </div>
+          </CompactSection>
+
+          <CompactSection title={selectedPrompt ? "Editar Prompt" : "Incluir Prompt"} description="Defina a instrução e a versão do prompt ativo.">
+            <form className="bh-auth-form" onSubmit={handleSave}>
+              <label className="bh-field">
+                <span>Nome / Título</span>
+                <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ex: Lead qualification" />
+              </label>
+              <label className="bh-field">
+                <span>Versão e Status</span>
+                <input required value={meta} onChange={(e) => setMeta(e.target.value)} placeholder="ex: Versão v18 · Ativo" />
+              </label>
+              <label className="bh-field">
+                <span>Diretriz do Prompt</span>
+                <textarea required value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="ex: Você é um agente especializado..." style={{ width: "100%", minHeight: "80px", background: "var(--field-bg)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0.5rem", borderRadius: "4px" }} />
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <Button type="submit" tone="primary">Salvar</Button>
+                {selectedPrompt ? (
+                  <>
+                    <Button type="button" tone="risk" onClick={() => handleDelete(selectedPrompt.id)}>Excluir</Button>
+                    <Button type="button" tone="secondary" onClick={handleCancel}>Cancelar</Button>
+                  </>
+                ) : null}
+              </div>
+            </form>
+          </CompactSection>
         </div>
       </main>
     );
   }
 
   if (route === "automacao/workflows") {
+    const [workflows, setWorkflows] = useState<any[]>([]);
+    const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
+    const [title, setTitle] = useState("");
+    const [meta, setMeta] = useState("");
+    const [detail, setDetail] = useState("");
+
+    useEffect(() => {
+      const saved = localStorage.getItem("bighead_workflows_local");
+      if (saved) {
+        setWorkflows(JSON.parse(saved));
+      } else {
+        const defaults = [
+          { id: "1", title: "Lead routing", meta: "Responsável: Growth · Ativo", detail: "Workflow para qualificação e distribuição automática de novos leads." },
+          { id: "2", title: "Approval chain", meta: "Responsável: Governança · Ativo", detail: "Esteira de aprovação de riscos e verificação de compliance de contratos." },
+          { id: "3", title: "Knowledge ingest", meta: "Responsável: Operações · Ativo", detail: "Processamento, extração de texto, chunking e indexação em banco vetorial." }
+        ];
+        localStorage.setItem("bighead_workflows_local", JSON.stringify(defaults));
+        setWorkflows(defaults);
+      }
+    }, []);
+
+    const handleSave = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!title) return;
+      let updated;
+      if (selectedWorkflow) {
+        updated = workflows.map(w => w.id === selectedWorkflow.id ? { ...w, title, meta, detail } : w);
+      } else {
+        const newItem = { id: String(Date.now()), title, meta, detail };
+        updated = [...workflows, newItem];
+      }
+      setWorkflows(updated);
+      localStorage.setItem("bighead_workflows_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleDelete = (id: string) => {
+      const updated = workflows.filter(w => w.id !== id);
+      setWorkflows(updated);
+      localStorage.setItem("bighead_workflows_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleEdit = (w: any) => {
+      setSelectedWorkflow(w);
+      setTitle(w.title);
+      setMeta(w.meta);
+      setDetail(w.detail);
+    };
+
+    const handleCancel = () => {
+      setSelectedWorkflow(null);
+      setTitle("");
+      setMeta("");
+      setDetail("");
+    };
+
     return (
       <main className="bh-compact-page">
-        <header className="bh-auth-heading" style={{ marginBottom: "1rem" }}>
+        <header className="bh-auth-heading">
           <span className="bh-eyebrow">Automação</span>
           <h1>Catálogo de Workflows</h1>
+          <p>Monitore, inclua, configure e edite fluxos de execução baseados em grafos de agentes.</p>
         </header>
-        <div style={{ marginBottom: "1.5rem" }}>
-          <Button onClick={() => alert("Simulação: incluir workflow acionado")} tone="primary">Incluir Workflow</Button>
-        </div>
+
         <div className="bh-compact-grid">
-          <MiniCard title="Lead routing" meta="Responsável: Growth · Ativo" detail="Workflow para qualificação e distribuição automática de novos leads." />
-          <MiniCard title="Approval chain" meta="Responsável: Governança · Ativo" detail="Esteira de aprovação de riscos e verificação de compliance de contratos." />
-          <MiniCard title="Knowledge ingest" meta="Responsável: Operações · Ativo" detail="Processamento, extração de texto, chunking e indexação em banco vetorial." />
+          <CompactSection title="Workflows Registrados" description="Selecione um workflow para editar ou excluir localmente.">
+            <div className="bh-list-panel">
+              {workflows.map((w) => (
+                <button key={w.id} className="bh-row-button" type="button" onClick={() => handleEdit(w)}>
+                  <strong>{w.title}</strong>
+                  <span>{w.meta}</span>
+                  <small>{w.detail}</small>
+                </button>
+              ))}
+              {workflows.length === 0 ? <p className="bh-state-panel">Nenhum workflow disponível.</p> : null}
+            </div>
+          </CompactSection>
+
+          <CompactSection title={selectedWorkflow ? "Editar Workflow" : "Incluir Workflow"} description="Cadastre passos de automação e regras de roteamento.">
+            <form className="bh-auth-form" onSubmit={handleSave}>
+              <label className="bh-field">
+                <span>Nome do Workflow</span>
+                <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ex: Lead routing" />
+              </label>
+              <label className="bh-field">
+                <span>Responsável e Status</span>
+                <input required value={meta} onChange={(e) => setMeta(e.target.value)} placeholder="ex: Responsável: Growth · Ativo" />
+              </label>
+              <label className="bh-field">
+                <span>Descrição / Detalhes</span>
+                <textarea required value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="ex: Passos do agente, decisão e aprovador..." style={{ width: "100%", minHeight: "80px", background: "var(--field-bg)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0.5rem", borderRadius: "4px" }} />
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <Button type="submit" tone="primary">Salvar</Button>
+                {selectedWorkflow ? (
+                  <>
+                    <Button type="button" tone="risk" onClick={() => handleDelete(selectedWorkflow.id)}>Excluir</Button>
+                    <Button type="button" tone="secondary" onClick={handleCancel}>Cancelar</Button>
+                  </>
+                ) : null}
+              </div>
+            </form>
+          </CompactSection>
         </div>
       </main>
     );
   }
 
   if (route === "automacao/biblioteca") {
+    const [rags, setRags] = useState<any[]>([]);
+    const [selectedRag, setSelectedRag] = useState<any | null>(null);
+    const [title, setTitle] = useState("");
+    const [meta, setMeta] = useState("");
+    const [detail, setDetail] = useState("");
+
+    useEffect(() => {
+      const saved = localStorage.getItem("bighead_rags_local");
+      if (saved) {
+        setRags(JSON.parse(saved));
+      } else {
+        const defaults = [
+          { id: "1", title: "Internal docs", meta: "Origem: Google Drive · Pronto", detail: "Base de conhecimento interna sobre políticas operacionais da empresa." },
+          { id: "2", title: "Support base", meta: "Origem: Ticketing · Processando", detail: "Histórico de chamados e soluções para atendimento rápido de suporte." },
+          { id: "3", title: "Commercial playbook", meta: "Origem: Manual Comercial · Em revisão", detail: "Regras de qualificação, propostas e técnicas de vendas da BigHead." }
+        ];
+        localStorage.setItem("bighead_rags_local", JSON.stringify(defaults));
+        setRags(defaults);
+      }
+    }, []);
+
+    const handleSave = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!title) return;
+      let updated;
+      if (selectedRag) {
+        updated = rags.map(r => r.id === selectedRag.id ? { ...r, title, meta, detail } : r);
+      } else {
+        const newItem = { id: String(Date.now()), title, meta, detail };
+        updated = [...rags, newItem];
+      }
+      setRags(updated);
+      localStorage.setItem("bighead_rags_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleDelete = (id: string) => {
+      const updated = rags.filter(r => r.id !== id);
+      setRags(updated);
+      localStorage.setItem("bighead_rags_local", JSON.stringify(updated));
+      handleCancel();
+    };
+
+    const handleEdit = (r: any) => {
+      setSelectedRag(r);
+      setTitle(r.title);
+      setMeta(r.meta);
+      setDetail(r.detail);
+    };
+
+    const handleCancel = () => {
+      setSelectedRag(null);
+      setTitle("");
+      setMeta("");
+      setDetail("");
+    };
+
     return (
       <main className="bh-compact-page">
-        <header className="bh-auth-heading" style={{ marginBottom: "1rem" }}>
+        <header className="bh-auth-heading">
           <span className="bh-eyebrow">Automação</span>
           <h1>Biblioteca RAG</h1>
+          <p>Gerencie e conecte repositórios de conhecimento aos seus agentes de IA local.</p>
         </header>
-        <div style={{ marginBottom: "1.5rem" }}>
-          <Button onClick={() => alert("Simulação: incluir RAG acionado")} tone="primary">Incluir RAG</Button>
-        </div>
+
         <div className="bh-compact-grid">
-          <MiniCard title="Internal docs" meta="Origem: Google Drive · Pronto" detail="Base de conhecimento interna sobre políticas operacionais da empresa." />
-          <MiniCard title="Support base" meta="Origem: Ticketing · Processando" detail="Histórico de chamados e soluções para atendimento rápido de suporte." />
-          <MiniCard title="Commercial playbook" meta="Origem: Manual Comercial · Em revisão" detail="Regras de qualificação, propostas e técnicas de vendas da BigHead." />
+          <CompactSection title="Bases RAG Ativas" description="Selecione uma base RAG para editar ou excluir localmente.">
+            <div className="bh-list-panel">
+              {rags.map((r) => (
+                <button key={r.id} className="bh-row-button" type="button" onClick={() => handleEdit(r)}>
+                  <strong>{r.title}</strong>
+                  <span>{r.meta}</span>
+                  <small>{r.detail}</small>
+                </button>
+              ))}
+              {rags.length === 0 ? <p className="bh-state-panel">Nenhuma base RAG disponível.</p> : null}
+            </div>
+          </CompactSection>
+
+          <CompactSection title={selectedRag ? "Editar Base RAG" : "Incluir Base RAG"} description="Conecte uma nova fonte de contexto para os agentes de IA.">
+            <form className="bh-auth-form" onSubmit={handleSave}>
+              <label className="bh-field">
+                <span>Título da Base</span>
+                <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ex: Internal docs" />
+              </label>
+              <label className="bh-field">
+                <span>Origem / Estado</span>
+                <input required value={meta} onChange={(e) => setMeta(e.target.value)} placeholder="ex: Origem: Google Drive · Pronto" />
+              </label>
+              <label className="bh-field">
+                <span>Descrição da Fonte</span>
+                <textarea required value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="ex: Contratos e atas de reuniões..." style={{ width: "100%", minHeight: "80px", background: "var(--field-bg)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0.5rem", borderRadius: "4px" }} />
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <Button type="submit" tone="primary">Salvar</Button>
+                {selectedRag ? (
+                  <>
+                    <Button type="button" tone="risk" onClick={() => handleDelete(selectedRag.id)}>Excluir</Button>
+                    <Button type="button" tone="secondary" onClick={handleCancel}>Cancelar</Button>
+                  </>
+                ) : null}
+              </div>
+            </form>
+          </CompactSection>
         </div>
       </main>
     );
