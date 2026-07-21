@@ -267,7 +267,7 @@ async def patch_organization(
 
 @router.get("/projects", response_model=ProjectListResponse, tags=["projects"])
 async def projects(
-    context: TenantContext,
+    context: ManagerContext,
     repo: Annotated[AdministrationRepository, Depends(repository)],
 ) -> ProjectListResponse:
     return await repo.projects(_user(context), context.organization_id)
