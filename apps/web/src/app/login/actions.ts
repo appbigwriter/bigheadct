@@ -16,17 +16,29 @@ export async function signIn(formData: FormData) {
   if (!email || !password) redirect("/login?error=missing_fields");
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) redirect(loginFailureLocation(error));
 
-  const { data: organization } = await supabase.from("organizations").select("id").order("created_at").limit(1).maybeSingle();
-  const organizationRecord: unknown = organization;
-  const organizationId = organizationRecord !== null
-    && typeof organizationRecord === "object"
-    && "id" in organizationRecord
-    && typeof organizationRecord.id === "string"
-    ? organizationRecord.id
-    : undefined;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:55321";
+
+  let organizationId: string | undefined;
+  if (data?.user?.id && serviceRoleKey) {
+    const { createClient: createSupabaseClient } = await import("@supabase/supabase-js");
+    const supabaseAdmin = createSupabaseClient(supabaseUrl, serviceRoleKey);
+    const { data: membership } = await supabaseAdmin
+      .from("organization_members")
+      .select("organization_id")
+      .eq("user_id", data.user.id)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+
+    if (membership && typeof membership === "object" && "organization_id" in membership && typeof membership.organization_id === "string") {
+      organizationId = membership.organization_id;
+    }
+  }
+
   if (organizationId) {
     const store = await cookies();
     store.set("bighead-organization-id", organizationId, {
