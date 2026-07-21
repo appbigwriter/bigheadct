@@ -154,3 +154,137 @@ export async function decidePortal(form: FormData): Promise<MutationResult> {
     return { ok: true, status: 200, message: "Resposta externa registrada e auditada." };
   } catch (error) { return result(error); }
 }
+
+export async function createProject(form: FormData): Promise<MutationResult> {
+  try {
+    const organizationId = text(form, "organizationId");
+    const payload = {
+      name: text(form, "name"),
+      slug: text(form, "slug"),
+      businessType: text(form, "businessType") || "custom",
+      templateKey: text(form, "templateKey") || "custom_base",
+      domain: text(form, "domain") || null,
+      language: text(form, "language") || "pt",
+      description: text(form, "description") || null
+    };
+    if (shouldUseMockWorkspace()) return { ok: true, status: 201, message: `Projeto ${payload.name} criado localmente.` };
+    const response = await authenticatedApi<{ id: string }>("/v1/projects", {
+      method: "POST",
+      organizationId,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    revalidatePath("/administracao/projetos");
+    return { ok: true, status: 201, message: `Projeto ${payload.name} criado com sucesso.`, data: response };
+  } catch (error) { return result(error); }
+}
+
+export async function updateProject(form: FormData): Promise<MutationResult> {
+  try {
+    const organizationId = text(form, "organizationId");
+    const projectId = text(form, "projectId");
+    const payload = {
+      name: text(form, "name") || null,
+      domain: text(form, "domain") || null,
+      language: text(form, "language") || null,
+      description: text(form, "description") || null,
+      status: text(form, "status") || null
+    };
+    if (shouldUseMockWorkspace()) return { ok: true, status: 200, message: `Projeto atualizado localmente.` };
+    await authenticatedApi(`/v1/projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      organizationId,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    revalidatePath("/administracao/projetos");
+    return { ok: true, status: 200, message: "Projeto atualizado com sucesso." };
+  } catch (error) { return result(error); }
+}
+
+export async function deleteProject(form: FormData): Promise<MutationResult> {
+  try {
+    const organizationId = text(form, "organizationId");
+    const projectId = text(form, "projectId");
+    if (shouldUseMockWorkspace()) return { ok: true, status: 200, message: `Projeto excluido localmente.` };
+    await authenticatedApi(`/v1/projects/${encodeURIComponent(projectId)}`, {
+      method: "DELETE",
+      organizationId
+    });
+    revalidatePath("/administracao/projetos");
+    return { ok: true, status: 200, message: "Projeto arquivado com sucesso." };
+  } catch (error) { return result(error); }
+}
+
+export async function createTeam(form: FormData): Promise<MutationResult> {
+  try {
+    const organizationId = text(form, "organizationId");
+    const orgs = form.getAll("organizationIds").filter(Boolean) as string[];
+    const projs = form.getAll("projectIds").filter(Boolean) as string[];
+    const participantsRaw = text(form, "participantsJson");
+    const participants = participantsRaw ? JSON.parse(participantsRaw) : [];
+
+    const payload = {
+      name: text(form, "name"),
+      slug: text(form, "slug"),
+      description: text(form, "description") || null,
+      organizationIds: orgs,
+      projectIds: projs,
+      participants
+    };
+    if (shouldUseMockWorkspace()) return { ok: true, status: 201, message: `Time ${payload.name} criado localmente.` };
+    const response = await authenticatedApi<{ id: string }>("/v1/teams", {
+      method: "POST",
+      organizationId,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    revalidatePath("/administracao/times");
+    return { ok: true, status: 201, message: `Time ${payload.name} criado com sucesso.`, data: response };
+  } catch (error) { return result(error); }
+}
+
+export async function updateTeam(form: FormData): Promise<MutationResult> {
+  try {
+    const organizationId = text(form, "organizationId");
+    const teamId = text(form, "teamId");
+    const orgs = form.getAll("organizationIds").filter(Boolean) as string[];
+    const projs = form.getAll("projectIds").filter(Boolean) as string[];
+    const participantsRaw = text(form, "participantsJson");
+    const participants = participantsRaw ? JSON.parse(participantsRaw) : null;
+
+    const payload = {
+      name: text(form, "name") || null,
+      slug: text(form, "slug") || null,
+      description: text(form, "description") || null,
+      status: text(form, "status") || null,
+      organizationIds: orgs.length > 0 ? orgs : null,
+      projectIds: projs.length > 0 ? projs : null,
+      ...(participants ? { participants } : {})
+    };
+    if (shouldUseMockWorkspace()) return { ok: true, status: 200, message: `Time atualizado localmente.` };
+    await authenticatedApi(`/v1/teams/${encodeURIComponent(teamId)}`, {
+      method: "PATCH",
+      organizationId,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    revalidatePath("/administracao/times");
+    return { ok: true, status: 200, message: "Time atualizado com sucesso." };
+  } catch (error) { return result(error); }
+}
+
+export async function deleteTeam(form: FormData): Promise<MutationResult> {
+  try {
+    const organizationId = text(form, "organizationId");
+    const teamId = text(form, "teamId");
+    if (shouldUseMockWorkspace()) return { ok: true, status: 200, message: `Time excluido localmente.` };
+    await authenticatedApi(`/v1/teams/${encodeURIComponent(teamId)}`, {
+      method: "DELETE",
+      organizationId
+    });
+    revalidatePath("/administracao/times");
+    return { ok: true, status: 200, message: "Time arquivado com sucesso." };
+  } catch (error) { return result(error); }
+}
+

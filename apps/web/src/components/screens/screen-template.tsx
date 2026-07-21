@@ -67,7 +67,9 @@ export async function ScreenTemplate({ screen, searchParams = {} }: ScreenTempla
   ]);
   if (excludedRoutes.has(route)) return null;
   if (compactRoutes.has(route)) {
-    return <CompactRouteScreens screen={screen} searchParams={searchParams} />;
+    const context = await getWorkspaceRequestContext();
+    const snapshot = await getServerWorkspaceData(context);
+    return <CompactRouteScreens screen={screen} searchParams={searchParams} snapshot={snapshot} />;
   }
   if (route === "operacao/busca-global") return <GlobalSearch />;
   if (route === "colaboracao/salas") {

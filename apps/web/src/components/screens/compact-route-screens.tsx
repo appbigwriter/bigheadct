@@ -10,6 +10,7 @@ import type { ScreenDefinition } from "@/lib/screen-catalog";
 type CompactRouteScreenProps = {
   screen: ScreenDefinition;
   searchParams?: Record<string, string | string[] | undefined>;
+  snapshot?: any;
 };
 
 type CompactSectionProps = {
@@ -119,31 +120,58 @@ function MiniCard({ title, meta, detail }: { title: string; meta: string; detail
   );
 }
 
-export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteScreenProps) {
+export function CompactRouteScreens({ screen, searchParams = {}, snapshot }: CompactRouteScreenProps) {
   const route = routeKey(screen);
 
-  const [projectsList, setProjectsList] = useState([
-    { id: "1", name: "Atlas launch", org: "Atlas Local", owner: "Camila Moura" },
-    { id: "2", name: "Support revamp", org: "Atlas Local", owner: "Rafael Costa" },
-    { id: "3", name: "Enterprise rollout", org: "Northwind", owner: "Lucas Gomes" }
-  ]);
-
-  const [teamsList, setTeamsList] = useState([
-    { id: "1", name: "Growth team", type: "Combinado (Humanos + Agentes)", orgs: ["Atlas Local", "Northwind"], projects: ["Atlas launch", "Support revamp"] },
-    { id: "2", name: "Ops team", type: "Humanos apenas", orgs: ["Atlas Local"], projects: ["Support revamp"] },
-    { id: "3", name: "Automation team", type: "Agentes apenas", orgs: ["Northwind"], projects: ["Enterprise rollout"] }
-  ]);
+  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [teamsList, setTeamsList] = useState<any[]>([]);
 
   useEffect(() => {
-    const savedProjects = localStorage.getItem("bighead_projects");
-    if (savedProjects) {
-      setProjectsList(JSON.parse(savedProjects) as typeof projectsList);
+    if (snapshot) {
+      if (snapshot.projectOptions) {
+        setProjectsList(snapshot.projectOptions.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          org: snapshot.currentOrganization || "Atlas Local",
+          owner: p.owner || "Owner"
+        })));
+      }
+      if (snapshot.teamOptions) {
+        setTeamsList(snapshot.teamOptions.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          type: t.participants && t.participants.length > 0
+            ? (t.participants.some((p: any) => p.kind === "agent") && t.participants.some((p: any) => p.kind === "human")
+              ? "Combinado (Humanos + Agentes)"
+              : (t.participants.some((p: any) => p.kind === "agent") ? "Agentes apenas" : "Humanos apenas"))
+            : "Humanos apenas",
+          orgs: [snapshot.currentOrganization || "Atlas Local"],
+          projects: t.projectIds || []
+        })));
+      }
+    } else {
+      const savedProjects = localStorage.getItem("bighead_projects");
+      if (savedProjects) {
+        setProjectsList(JSON.parse(savedProjects) as typeof projectsList);
+      } else {
+        setProjectsList([
+          { id: "1", name: "Atlas launch", org: "Atlas Local", owner: "Camila Moura" },
+          { id: "2", name: "Support revamp", org: "Atlas Local", owner: "Rafael Costa" },
+          { id: "3", name: "Enterprise rollout", org: "Northwind", owner: "Lucas Gomes" }
+        ]);
+      }
+      const savedTeams = localStorage.getItem("bighead_teams");
+      if (savedTeams) {
+        setTeamsList(JSON.parse(savedTeams) as typeof teamsList);
+      } else {
+        setTeamsList([
+          { id: "1", name: "Growth team", type: "Combinado (Humanos + Agentes)", orgs: ["Atlas Local", "Northwind"], projects: ["Atlas launch", "Support revamp"] },
+          { id: "2", name: "Ops team", type: "Humanos apenas", orgs: ["Atlas Local"], projects: ["Support revamp"] },
+          { id: "3", name: "Automation team", type: "Agentes apenas", orgs: ["Northwind"], projects: ["Enterprise rollout"] }
+        ]);
+      }
     }
-    const savedTeams = localStorage.getItem("bighead_teams");
-    if (savedTeams) {
-      setTeamsList(JSON.parse(savedTeams) as typeof teamsList);
-    }
-  }, []);
+  }, [snapshot]);
 
   const saveProjects = (newList: typeof projectsList) => {
     setProjectsList(newList);
@@ -1440,7 +1468,22 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <Link href={`/administracao/projetos/criar?editId=${project.id}`} className="bh-chip" style={{ background: "rgba(255,255,255,0.05)", padding: "0.25rem 0.5rem", fontSize: "0.8rem", textDecoration: "none" }}>Editar</Link>
-                  <Button onClick={() => saveProjects(projectsList.filter(p => p.id !== project.id))} tone="secondary" style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}>Excluir</Button>
+                  <Button onClick={async () => {
+                    if (snapshot && snapshot.currentOrganizationId) {
+                      const { deleteProject } = await import("@/app/actions/critical-mutations");
+                      const actionForm = new FormData();
+                      actionForm.append("organizationId", snapshot.currentOrganizationId);
+                      actionForm.append("projectId", project.id);
+                      const res = await deleteProject(actionForm);
+                      if (res.ok) {
+                        setProjectsList(prev => prev.filter(p => p.id !== project.id));
+                      } else {
+                        alert(res.message);
+                      }
+                    } else {
+                      saveProjects(projectsList.filter(p => p.id !== project.id));
+                    }
+                  }} tone="secondary" style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}>Excluir</Button>
                 </div>
               </div>
             ))}
@@ -1461,21 +1504,41 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
     const isEditing = !!editId;
     const projectToEdit = isEditing ? projectsList.find(p => p.id === editId) : null;
 
-    const handleSaveProject = (e: React.FormEvent<HTMLFormElement>) => {
+    const handleSaveProject = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const form = new FormData(e.currentTarget);
       const name = form.get("name") as string;
-      const org = form.get("organization") as string;
-      const owner = form.get("owner") as string;
-
       if (!name.trim()) return;
 
-      if (isEditing) {
-        saveProjects(projectsList.map(p => p.id === editId ? { ...p, name, org, owner } : p));
+      if (snapshot && snapshot.currentOrganizationId) {
+        const { createProject, updateProject } = await import("@/app/actions/critical-mutations");
+        const actionForm = new FormData();
+        actionForm.append("organizationId", snapshot.currentOrganizationId);
+        actionForm.append("name", name);
+        actionForm.append("slug", name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""));
+        actionForm.append("description", (form.get("description") as string) || "");
+        actionForm.append("domain", (form.get("domain") as string) || "");
+
+        if (isEditing) {
+          actionForm.append("projectId", editId);
+          const res = await updateProject(actionForm);
+          if (res.ok) window.location.href = "/administracao/projetos";
+          else alert(res.message);
+        } else {
+          const res = await createProject(actionForm);
+          if (res.ok) window.location.href = "/administracao/projetos";
+          else alert(res.message);
+        }
       } else {
-        saveProjects([...projectsList, { id: crypto.randomUUID(), name, org, owner }]);
+        const org = form.get("organization") as string;
+        const owner = form.get("owner") as string;
+        if (isEditing) {
+          saveProjects(projectsList.map(p => p.id === editId ? { ...p, name, org, owner } : p));
+        } else {
+          saveProjects([...projectsList, { id: crypto.randomUUID(), name, org, owner }]);
+        }
+        window.location.href = "/administracao/projetos";
       }
-      window.location.href = "/administracao/projetos";
     };
 
     return (
@@ -1487,9 +1550,15 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
         </header>
         <CompactSection title={isEditing ? "Editar Projeto" : "Novo Projeto"} description="Preencha os dados do projeto abaixo.">
           <form className="bh-auth-form" onSubmit={handleSaveProject}>
-            <Field name="organization" label="Organização" defaultValue={projectToEdit?.org ?? "Atlas Local"} placeholder="Organização do projeto" />
+            {!snapshot ? (
+              <Field name="organization" label="Organização" defaultValue={projectToEdit?.org ?? "Atlas Local"} placeholder="Organização do projeto" />
+            ) : null}
             <Field name="name" label="Nome do projeto" defaultValue={projectToEdit?.name ?? ""} placeholder="Nome do projeto" />
-            <Field name="owner" label="Proprietário" defaultValue={projectToEdit?.owner ?? ""} placeholder="Nome do proprietário" />
+            {!snapshot ? (
+              <Field name="owner" label="Proprietário" defaultValue={projectToEdit?.owner ?? ""} placeholder="Nome do proprietário" />
+            ) : null}
+            <Field name="domain" label="Domínio (opcional)" defaultValue="" placeholder="exemplo.com" />
+            <Field name="description" label="Descrição (opcional)" defaultValue="" placeholder="Descrição operacional do projeto" />
             <div style={{ display: "flex", gap: "1rem", marginTop: "1.5rem" }}>
               <Button type="submit">{isEditing ? "Salvar alterações" : "Criar projeto"}</Button>
               <Link href="/administracao/projetos" className="bh-chip" style={{ background: "rgba(255,255,255,0.05)", padding: "0.5rem 1rem", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Cancelar</Link>
@@ -1516,12 +1585,27 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
                   <strong>{team.name}</strong>
                   <span style={{ display: "block", fontSize: "0.85rem", color: "var(--muted)" }}>Tipo: {team.type}</span>
                   <small style={{ display: "block", color: "var(--muted)", marginTop: "0.25rem", fontSize: "0.75rem" }}>
-                    Orgs: {team.orgs.join(", ")} | Projetos: {team.projects.join(", ")}
+                    Orgs: {team.orgs.join(", ")}
                   </small>
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <Link href={`/administracao/times/criar?editId=${team.id}`} className="bh-chip" style={{ background: "rgba(255,255,255,0.05)", padding: "0.25rem 0.5rem", fontSize: "0.8rem", textDecoration: "none" }}>Editar</Link>
-                  <Button onClick={() => saveTeams(teamsList.filter(t => t.id !== team.id))} tone="secondary" style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}>Excluir</Button>
+                  <Button onClick={async () => {
+                    if (snapshot && snapshot.currentOrganizationId) {
+                      const { deleteTeam } = await import("@/app/actions/critical-mutations");
+                      const actionForm = new FormData();
+                      actionForm.append("organizationId", snapshot.currentOrganizationId);
+                      actionForm.append("teamId", team.id);
+                      const res = await deleteTeam(actionForm);
+                      if (res.ok) {
+                        setTeamsList(prev => prev.filter(t => t.id !== team.id));
+                      } else {
+                        alert(res.message);
+                      }
+                    } else {
+                      saveTeams(teamsList.filter(t => t.id !== team.id));
+                    }
+                  }} tone="secondary" style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}>Excluir</Button>
                 </div>
               </div>
             ))}
@@ -1542,38 +1626,82 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
     const isEditing = !!editId;
     const teamToEdit = isEditing ? teamsList.find(t => t.id === editId) : null;
 
-    const handleSaveTeam = (e: React.FormEvent<HTMLFormElement>) => {
+    const handleSaveTeam = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const form = new FormData(e.currentTarget);
       const name = form.get("name") as string;
+      if (!name.trim()) return;
+
       const isHuman = form.get("isHuman") === "on";
       const isAgent = form.get("isAgent") === "on";
 
-      if (!name.trim()) return;
-      
-      let type = "Humanos apenas";
-      if (isHuman && isAgent) type = "Combinado (Humanos + Agentes)";
-      else if (isAgent) type = "Agentes apenas";
+      if (snapshot && snapshot.currentOrganizationId) {
+        const { createTeam, updateTeam } = await import("@/app/actions/critical-mutations");
+        const actionForm = new FormData();
+        actionForm.append("organizationId", snapshot.currentOrganizationId);
+        actionForm.append("name", name);
+        actionForm.append("slug", name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""));
+        actionForm.append("description", (form.get("description") as string) || "");
 
-      const selectedOrgs: string[] = [];
-      if (form.get("org_atlas") === "on") selectedOrgs.push("Atlas Local");
-      if (form.get("org_northwind") === "on") selectedOrgs.push("Northwind");
-      if (form.get("org_acme") === "on") selectedOrgs.push("Acme Growth");
+        // Associa organizações selecionadas
+        const selectedOrgs = form.getAll("organizationIds");
+        if (selectedOrgs.length > 0) {
+          selectedOrgs.forEach(id => actionForm.append("organizationIds", id));
+        } else {
+          actionForm.append("organizationIds", snapshot.currentOrganizationId);
+        }
 
-      const selectedProjects: string[] = [];
-      if (form.get("proj_launch") === "on") selectedProjects.push("Atlas launch");
-      if (form.get("proj_revamp") === "on") selectedProjects.push("Support revamp");
-      if (form.get("proj_rollout") === "on") selectedProjects.push("Enterprise rollout");
+        // Associa projetos selecionados
+        const selectedProjects = form.getAll("projectIds");
+        selectedProjects.forEach(id => actionForm.append("projectIds", id));
 
-      if (selectedOrgs.length === 0) selectedOrgs.push("Atlas Local");
-      if (selectedProjects.length === 0) selectedProjects.push("Atlas launch");
+        // Monta os participantes baseados na composição
+        const participants = [];
+        if (isHuman) {
+          participants.push({
+            kind: "human",
+            display_name: "Human Member",
+            email: "member@company.com"
+          });
+        }
+        if (isAgent) {
+          participants.push({
+            kind: "agent",
+            display_name: "Agent AI Bot",
+            email: "agent@company.com"
+          });
+        }
+        actionForm.append("participantsJson", JSON.stringify(participants));
 
-      if (isEditing) {
-        saveTeams(teamsList.map(t => t.id === editId ? { ...t, name, type, orgs: selectedOrgs, projects: selectedProjects } : t));
+        if (isEditing) {
+          actionForm.append("teamId", editId);
+          const res = await updateTeam(actionForm);
+          if (res.ok) window.location.href = "/administracao/times";
+          else alert(res.message);
+        } else {
+          const res = await createTeam(actionForm);
+          if (res.ok) window.location.href = "/administracao/times";
+          else alert(res.message);
+        }
       } else {
-        saveTeams([...teamsList, { id: crypto.randomUUID(), name, type, orgs: selectedOrgs, projects: selectedProjects }]);
+        let type = "Humanos apenas";
+        if (isHuman && isAgent) type = "Combinado (Humanos + Agentes)";
+        else if (isAgent) type = "Agentes apenas";
+
+        const selectedOrgsMock: string[] = [];
+        if (form.get("org_atlas") === "on") selectedOrgsMock.push("Atlas Local");
+        if (form.get("org_northwind") === "on") selectedOrgsMock.push("Northwind");
+
+        const selectedProjectsMock: string[] = [];
+        if (form.get("proj_launch") === "on") selectedProjectsMock.push("Atlas launch");
+
+        if (isEditing) {
+          saveTeams(teamsList.map(t => t.id === editId ? { ...t, name, type, orgs: selectedOrgsMock, projects: selectedProjectsMock } : t));
+        } else {
+          saveTeams([...teamsList, { id: crypto.randomUUID(), name, type, orgs: selectedOrgsMock, projects: selectedProjectsMock }]);
+        }
+        window.location.href = "/administracao/times";
       }
-      window.location.href = "/administracao/times";
     };
 
     return (
@@ -1583,9 +1711,10 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
           <h1>{isEditing ? "Editar Time" : "Criar Time"}</h1>
           <p>Times podem ser formados por humanos, agentes ou ambos combinados e podem atuar em múltiplas organizações e projetos.</p>
         </header>
-        <CompactSection title={isEditing ? "Editar Time" : "Novo Time"} description="Configure o time com humanos, agentes ou combinados, atuando em múltiplas organizações e projetos.">
+        <CompactSection title={isEditing ? "Editar Time" : "Novo Time"} description="Configure o time com humanos, agentes ou combinados.">
           <form className="bh-auth-form" onSubmit={handleSaveTeam}>
             <Field name="name" label="Nome do time" defaultValue={teamToEdit?.name ?? ""} placeholder="Commercial pod" />
+            <Field name="description" label="Descrição" defaultValue={teamToEdit?.description ?? ""} placeholder="Time responsável pelas integrações e comercial." />
             
             <div style={{ margin: "1rem 0" }}>
               <span style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>Composição dos Membros</span>
@@ -1604,36 +1733,50 @@ export function CompactRouteScreens({ screen, searchParams = {} }: CompactRouteS
             <div style={{ margin: "1rem 0" }}>
               <span style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>Organizações de Atuação</span>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label className="bh-check">
-                  <input type="checkbox" name="org_atlas" defaultChecked={teamToEdit ? teamToEdit.orgs.includes("Atlas Local") : true} />
-                  <span>Atlas Local</span>
-                </label>
-                <label className="bh-check">
-                  <input type="checkbox" name="org_northwind" defaultChecked={teamToEdit ? teamToEdit.orgs.includes("Northwind") : false} />
-                  <span>Northwind</span>
-                </label>
-                <label className="bh-check">
-                  <input type="checkbox" name="org_acme" defaultChecked={teamToEdit ? teamToEdit.orgs.includes("Acme Growth") : false} />
-                  <span>Acme Growth</span>
-                </label>
+                {snapshot && snapshot.organizationOptions ? (
+                  snapshot.organizationOptions.map((org: any) => (
+                    <label key={org.id} className="bh-check">
+                      <input type="checkbox" name="organizationIds" value={org.id} defaultChecked={teamToEdit ? teamToEdit.orgs.includes(org.name) : true} />
+                      <span>{org.name}</span>
+                    </label>
+                  ))
+                ) : (
+                  <>
+                    <label className="bh-check">
+                      <input type="checkbox" name="org_atlas" defaultChecked={teamToEdit ? teamToEdit.orgs.includes("Atlas Local") : true} />
+                      <span>Atlas Local</span>
+                    </label>
+                    <label className="bh-check">
+                      <input type="checkbox" name="org_northwind" defaultChecked={teamToEdit ? teamToEdit.orgs.includes("Northwind") : false} />
+                      <span>Northwind</span>
+                    </label>
+                  </>
+                )}
               </div>
             </div>
 
             <div style={{ margin: "1rem 0" }}>
               <span style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>Projetos Associados</span>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <label className="bh-check">
-                  <input type="checkbox" name="proj_launch" defaultChecked={teamToEdit ? teamToEdit.projects.includes("Atlas launch") : true} />
-                  <span>Atlas launch</span>
-                </label>
-                <label className="bh-check">
-                  <input type="checkbox" name="proj_revamp" defaultChecked={teamToEdit ? teamToEdit.projects.includes("Support revamp") : false} />
-                  <span>Support revamp</span>
-                </label>
-                <label className="bh-check">
-                  <input type="checkbox" name="proj_rollout" defaultChecked={teamToEdit ? teamToEdit.projects.includes("Enterprise rollout") : false} />
-                  <span>Enterprise rollout</span>
-                </label>
+                {snapshot && snapshot.projectOptions ? (
+                  snapshot.projectOptions.map((proj: any) => (
+                    <label key={proj.id} className="bh-check">
+                      <input type="checkbox" name="projectIds" value={proj.id} defaultChecked={teamToEdit ? teamToEdit.projects.includes(proj.id) : true} />
+                      <span>{proj.name}</span>
+                    </label>
+                  ))
+                ) : (
+                  <>
+                    <label className="bh-check">
+                      <input type="checkbox" name="proj_launch" defaultChecked={teamToEdit ? teamToEdit.projects.includes("Atlas launch") : true} />
+                      <span>Atlas launch</span>
+                    </label>
+                    <label className="bh-check">
+                      <input type="checkbox" name="proj_revamp" defaultChecked={teamToEdit ? teamToEdit.projects.includes("Support revamp") : false} />
+                      <span>Support revamp</span>
+                    </label>
+                  </>
+                )}
               </div>
             </div>
 

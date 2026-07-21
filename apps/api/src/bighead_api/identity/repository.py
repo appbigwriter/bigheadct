@@ -197,12 +197,6 @@ class PostgresIdentityRepository:
         self, user_id: UUID, payload: OnboardingSubmitRequest
     ) -> OnboardingSubmitResponse:
         async with self.database.privileged() as connection:
-            already_member = await connection.fetchval(
-                "select exists(select 1 from public.organization_members where user_id = $1)",
-                user_id,
-            )
-            if already_member:
-                raise HTTPException(status_code=409, detail="Onboarding already completed")
             await connection.execute(
                 """insert into public.profiles(id, display_name, locale, timezone)
                      values ($1, $2, $3, $4)
