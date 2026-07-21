@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class WorkerSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env.local", ".env"), env_ignore_empty=True, extra="ignore"
+        env_file=("../../.env.local", "../../.env", ".env.local", ".env"), env_ignore_empty=True, extra="ignore"
     )
 
     app_env: str = Field(validation_alias=AliasChoices("APP_ENV"))
