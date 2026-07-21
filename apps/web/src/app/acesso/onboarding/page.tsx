@@ -37,7 +37,7 @@ export default async function OnboardingPage({
           <label htmlFor="organizationName">Organizacao</label>
           <input id="organizationName" name="organizationName" defaultValue="BigHead" required />
           <label htmlFor="organizationSlug">Slug da organizacao</label>
-          <input id="organizationSlug" name="organizationSlug" defaultValue="bighead" pattern="^[a-z0-9][a-z0-9-]{1,62}$" required />
+          <input id="organizationSlug" name="organizationSlug" defaultValue="bighead" pattern="^[a-z0-9][a-z0-9\-]{1,62}$" required />
           <label htmlFor="timezone">Fuso horario</label>
           <input id="timezone" name="timezone" defaultValue="America/Sao_Paulo" required />
           <label htmlFor="locale">Idioma</label>
