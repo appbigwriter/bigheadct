@@ -1,4 +1,4 @@
-﻿# BigHead — Easypanel App Stack
+# BigHead — Easypanel App Stack
 # Deploy: cole este arquivo no campo "Compose" ao criar um App Stack no Easypanel.
 # O Traefik do Easypanel gerencia TLS/HTTPS e roteamento por domínio automaticamente.
 # Configure os domínios de cada serviço na aba "Domains" do painel após criar o stack.
@@ -6,7 +6,7 @@
 # Domínios esperados:
 #   web     → bighead.fbr.news        (porta 3000)
 #   api     → bighead-api.fbr.news    (porta 8000)
-#   hermes  → hermes.fbr.news         (porta 8642)
+#   hermes  → hermes.fbr.news         (porta 9119)
 #   rag     → rag.fbr.news            (porta 3001)
 #
 # Serviços internos (sem domínio exposto):
@@ -133,7 +133,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
-      HERMES_API_URL: http://hermes:8642
+      HERMES_API_URL: http://hermes:9119
       HERMES_API_KEY: ${HERMES_API_KEY}
       HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL:-hermes}
       HERMES_TIMEOUT_SECONDS: ${HERMES_TIMEOUT_SECONDS:-60}
@@ -158,7 +158,7 @@ services:
 
   # ──────────────────────────────────────────────────
   # Hermes — LLM Gateway (Node.js)
-  # Domínio: hermes.fbr.news → porta 8642
+  # Domínio: hermes.fbr.news → porta 9119
   # ──────────────────────────────────────────────────
   hermes:
     image: ${BIGHEAD_HERMES_IMAGE:-ghcr.io/fbrnews/bigheadct-hermes:latest}
@@ -166,14 +166,14 @@ services:
     init: true
     environment:
       NODE_ENV: production
-      PORT: "8642"
+      PORT: "9119"
       HERMES_API_KEY: ${HERMES_API_KEY}
       HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL:-hermes}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8642/health/ready').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9119/health/ready').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 20s

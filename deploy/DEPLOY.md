@@ -4,16 +4,16 @@ Este documento descreve o procedimento passo a passo para realizar o deploy comp
 
 ---
 
-## 📋 Mapeamento Completo de Domínios e Serviços (6 Subdomínios)
+## 📋 Mapeamento Completo de Domínios e Serviços
 
 | Serviço | Subdomínio Público | Porta Interna / Protocolo | Descrição |
 |---------|-------------------|---------------------------|-----------|
 | **`web`** | `https://bighead.fbr.news` | 3000 (HTTP) | Frontend Next.js 15 |
 | **`api`** | `https://bighead-api.fbr.news` | 8000 (HTTP) | Backend FastAPI (Python 3.14) |
-| **`hermes`** | `https://hermes.fbr.news` | 8642 (HTTP) | Gateway LLM (Node.js) |
+| **`hermes`** | `https://hermes.fbr.news` | 9119 (HTTP) | Gateway LLM (Node.js) |
 | **`rag`** | `https://rag.fbr.news` | 3001 (HTTP) | AnythingLLM (RAG / Conhecimento) |
 | **`supabase`** | `https://supabase.fbr.news` | 8000 (HTTP/Kong) | Supabase Studio / Auth / Storage |
-| **`bd`** | `bd.bighead.fbr.news` | 5432 / 6543 (PostgreSQL) | Banco de Dados PostgreSQL (Direto/Pooler) |
+| **`db` / `bd`** | `db.bighead.fbr.news` / `bd.bighead.fbr.news` | 5432 (PostgreSQL) | Banco de Dados PostgreSQL (Direto/Pooler) |
 | `worker` | *Interno* | — | Processador de filas ARQ (Python) |
 | `redis` | *Interno* | 6379 | Broker de mensagens e Cache |
 | `clamav` | *Interno* | 3310 | Antivírus / Scanner de Malware |
@@ -32,7 +32,7 @@ Este documento descreve o procedimento passo a passo para realizar o deploy comp
 
 ## 🌐 2. Configuração de DNS (Criar Registros A)
 
-Crie os seguintes 6 registros **A** no seu provedor de DNS (ex: Cloudflare / Registro.br) apontando para o IP da VPS:
+Crie os registros **A** no seu provedor de DNS (ex: Cloudflare / Registro.br) apontando para o IP da VPS:
 
 ```text
 bighead.fbr.news.     IN  A  <IP_DA_SUA_VPS>
@@ -40,6 +40,7 @@ bighead-api.fbr.news. IN  A  <IP_DA_SUA_VPS>
 hermes.fbr.news.      IN  A  <IP_DA_SUA_VPS>
 rag.fbr.news.         IN  A  <IP_DA_SUA_VPS>
 supabase.fbr.news.    IN  A  <IP_DA_SUA_VPS>
+db.bighead.fbr.news.  IN  A  <IP_DA_SUA_VPS>
 bd.bighead.fbr.news.  IN  A  <IP_DA_SUA_VPS>
 ```
 
@@ -85,7 +86,7 @@ Após a instalação, acesse no navegador: `http://<IP_DA_VPS>:3000` e crie a co
 1. No Easypanel, crie um novo projeto chamado **`supabase`**.
 2. Escolha o template oficial do **Supabase** na galeria de templates do Easypanel.
 3. Defina a URL pública da API/Studio como `supabase.fbr.news`.
-4. Defina o host do banco de dados PostgreSQL como `bd.bighead.fbr.news`.
+4. Defina o host do banco de dados PostgreSQL como `db.bighead.fbr.news`.
 5. Salve as chaves geradas (`ANON_KEY`, `SERVICE_ROLE_KEY` e a senha do `POSTGRES_PASSWORD`).
 
 ---
@@ -100,7 +101,7 @@ Após a instalação, acesse no navegador: `http://<IP_DA_VPS>:3000` e crie a co
 5. Defina os domínios para cada serviço no Easypanel:
    - **`web`**: `bighead.fbr.news` (Porta 3000)
    - **`api`**: `bighead-api.fbr.news` (Porta 8000)
-   - **`hermes`**: `hermes.fbr.news` (Porta 8642)
+   - **`hermes`**: `hermes.fbr.news` (Porta 9119)
    - **`rag`**: `rag.fbr.news` (Porta 3001)
 
 6. Clique em **Deploy**.
@@ -109,11 +110,11 @@ Após a instalação, acesse no navegador: `http://<IP_DA_VPS>:3000` e crie a co
 
 ### Passo 6: Executar as Migrações do Banco de Dados
 
-Com a stack rodando e conectada ao Supabase self-hosted via `bd.bighead.fbr.news`, aplique o schema SQL no banco:
+Com a stack rodando e conectada ao Supabase self-hosted via `db.bighead.fbr.news`, aplique o schema SQL no banco:
 
 ```bash
 # Na sua máquina local, aponte a URL direta do banco para a produção:
-npx supabase db push --db-url "postgresql://postgres:<SENHA_POSTGRES>@bd.bighead.fbr.news:5432/postgres"
+npx supabase db push --db-url "postgresql://postgres:<SENHA_POSTGRES>@db.bighead.fbr.news:5432/postgres"
 ```
 
 ---
@@ -139,7 +140,7 @@ curl https://rag.fbr.news/api/ping
 curl https://supabase.fbr.news/auth/v1/health
 
 # Conexão Banco PostgreSQL
-NC -zv bd.bighead.fbr.news 5432
+NC -zv db.bighead.fbr.news 5432
 ```
 
 ---

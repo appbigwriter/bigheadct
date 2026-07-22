@@ -10,6 +10,7 @@ APP_ENV=production
 APP_URL=https://bighead.fbr.news
 API_URL=https://bighead-api.fbr.news
 CORS_ORIGINS=https://bighead.fbr.news
+NEXT_PUBLIC_CONTROL_TOWER_URL=https://bighead.fbr.news/control-tower
 LOG_LEVEL=INFO
 
 # ------------------------------------------------------------------------------
@@ -36,11 +37,11 @@ SUPABASE_AUTH_REDIRECT_URLS=https://bighead.fbr.news/auth/callback
 SUPABASE_AUTH_SMTP_CONFIGURED=true
 
 # ------------------------------------------------------------------------------
-# Banco de Dados PostgreSQL Direto / Pooler (bd.bighead.fbr.news)
+# Banco de Dados PostgreSQL Direto / Pooler (db.bighead.fbr.news / bd.bighead.fbr.news)
 # ------------------------------------------------------------------------------
-DATABASE_URL=postgresql://postgres:<senha-postgres>@bd.bighead.fbr.news:5432/postgres?sslmode=require
-DATABASE_SERVICE_URL=postgresql://postgres:<senha-postgres>@bd.bighead.fbr.news:5432/postgres?sslmode=require
-DIRECT_DATABASE_URL=postgresql://postgres:<senha-postgres>@bd.bighead.fbr.news:5432/postgres?sslmode=require
+DATABASE_URL=postgresql://postgres:<senha-postgres>@db.bighead.fbr.news:5432/postgres?sslmode=require
+DATABASE_SERVICE_URL=postgresql://postgres:<senha-postgres>@db.bighead.fbr.news:5432/postgres?sslmode=require
+DIRECT_DATABASE_URL=postgresql://postgres:<senha-postgres>@db.bighead.fbr.news:5432/postgres?sslmode=require
 
 # ------------------------------------------------------------------------------
 # Storage e Segurança Interna
@@ -62,9 +63,9 @@ JOB_LEASE_SECONDS=300
 MALWARE_SCANNER_URL=clamd://clamav:3310
 
 # ------------------------------------------------------------------------------
-# Hermes — LLM Gateway (hermes.fbr.news)
+# Hermes — LLM Gateway (hermes.fbr.news - Porta 9119)
 # ------------------------------------------------------------------------------
-HERMES_API_URL=http://hermes:8642
+HERMES_API_URL=http://hermes:9119
 HERMES_API_KEY=<copiar-do-openssl-rand-hex-32>
 HERMES_DEFAULT_MODEL=hermes
 HERMES_TIMEOUT_SECONDS=60

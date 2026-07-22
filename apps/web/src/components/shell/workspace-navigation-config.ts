@@ -4,7 +4,7 @@ export type ShellIcon = "home" | "messages" | "tasks" | "plus" | "approvals" | "
 export type ShellRoute = { label: string; href: string; icon?: ShellIcon };
 export type ShellGroup = { label: string; routes: ShellRoute[] };
 
-const controlTowerUrl = process.env.NEXT_PUBLIC_CONTROL_TOWER_URL || "http://localhost:3000";
+const controlTowerUrl = process.env.NEXT_PUBLIC_CONTROL_TOWER_URL || "/control-tower";
 
 export const primaryNavigation: ShellGroup[] = [
   { label: "Visao geral", routes: [{ label: "Inicio", href: "/operacao/home", icon: "home" }] },
