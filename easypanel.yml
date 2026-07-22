@@ -21,7 +21,9 @@ services:
   # Domínio: bighead.fbr.news → porta 3000
   # ──────────────────────────────────────────────────
   web:
-    image: ${BIGHEAD_WEB_IMAGE:-ghcr.io/fbrnews/bigheadct-web:latest}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
     restart: unless-stopped
     init: true
     read_only: true
@@ -32,9 +34,9 @@ services:
       APP_ENV: production
       APP_URL: https://bighead.fbr.news
       API_URL: https://bighead-api.fbr.news
-      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://supabase.fbr.news}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6AxNzk5NTM1NjAwCn0.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q}
       SUPABASE_AUTH_SITE_URL: https://bighead.fbr.news
       SUPABASE_AUTH_REDIRECT_URLS: https://bighead.fbr.news/auth/callback
       SUPABASE_AUTH_SMTP_CONFIGURED: ${SUPABASE_AUTH_SMTP_CONFIGURED:-true}
@@ -56,7 +58,9 @@ services:
   # Domínio: bighead-api.fbr.news → porta 8000
   # ──────────────────────────────────────────────────
   api:
-    image: ${BIGHEAD_API_IMAGE:-ghcr.io/fbrnews/bigheadct-api:latest}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
     restart: unless-stopped
     init: true
     read_only: true
@@ -69,20 +73,20 @@ services:
       API_PORT: "8000"
       CORS_ORIGINS: https://bighead.fbr.news
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATABASE_URL: ${DATABASE_URL}
-      DATABASE_SERVICE_URL: ${DATABASE_SERVICE_URL}
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-}
-      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
-      STORAGE_BUCKET: ${STORAGE_BUCKET:-artifacts}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:6mUok4MC6m5pDL23@db.bighead.fbr.news:5432/postgres?sslmode=require}
+      DATABASE_SERVICE_URL: ${DATABASE_SERVICE_URL:-postgresql://postgres:6mUok4MC6m5pDL23@db.bighead.fbr.news:5432/postgres?sslmode=require}
+      SUPABASE_URL: ${SUPABASE_URL:-https://supabase.fbr.news}
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-https://supabase.fbr.news}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6AxNzk5NTM1NjAwCn0.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-bighead}
       SIGNED_URL_TTL_SECONDS: ${SIGNED_URL_TTL_SECONDS:-900}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-Super1404@@@}@redis:6379/0
       QUEUE_NAME: ${QUEUE_NAME:-bighead:jobs}
       JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-300}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET}
-      PORTAL_TOKEN_PEPPER: ${PORTAL_TOKEN_PEPPER}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-supersecretencryptionkey32chars12}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:-local_webhook_secret_123}
+      PORTAL_TOKEN_PEPPER: ${PORTAL_TOKEN_PEPPER:-local_pepper_secret_123}
       OTEL_SERVICE_NAME: bighead-api
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
@@ -105,7 +109,9 @@ services:
   # Sem domínio público (serviço interno)
   # ──────────────────────────────────────────────────
   worker:
-    image: ${BIGHEAD_WORKER_IMAGE:-ghcr.io/fbrnews/bigheadct-worker:latest}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
     restart: unless-stopped
     init: true
     read_only: true
@@ -114,31 +120,31 @@ services:
     environment:
       APP_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-Super1404@@@}@redis:6379/0
       QUEUE_NAME: ${QUEUE_NAME:-bighead:jobs}
       JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-300}
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
-      STORAGE_BUCKET: ${STORAGE_BUCKET:-artifacts}
+      SUPABASE_URL: ${SUPABASE_URL:-https://supabase.fbr.news}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6AxNzk5NTM1NjAwCn0.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-bighead}
       MALWARE_SCANNER_URL: ${MALWARE_SCANNER_URL:-clamd://clamav:3310}
       MALWARE_SCANNER_API_KEY: ${MALWARE_SCANNER_API_KEY:-}
       RUN_PROVIDER_URL: ${RUN_PROVIDER_URL:-}
       RUN_PROVIDER_API_KEY: ${RUN_PROVIDER_API_KEY:-}
       RUN_PROVIDER_TIMEOUT_SECONDS: ${RUN_PROVIDER_TIMEOUT_SECONDS:-60}
-      LLM_PROVIDER_DEFAULT: ${LLM_PROVIDER_DEFAULT}
-      LLM_PROVIDER_FALLBACK: ${LLM_PROVIDER_FALLBACK}
-      LLM_MODEL_DEFAULT: ${LLM_MODEL_DEFAULT}
-      LLM_MODEL_FALLBACK: ${LLM_MODEL_FALLBACK}
+      LLM_PROVIDER_DEFAULT: ${LLM_PROVIDER_DEFAULT:-hermes}
+      LLM_PROVIDER_FALLBACK: ${LLM_PROVIDER_FALLBACK:-}
+      LLM_MODEL_DEFAULT: ${LLM_MODEL_DEFAULT:-hermes}
+      LLM_MODEL_FALLBACK: ${LLM_MODEL_FALLBACK:-gpt-4o-mini}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
       HERMES_API_URL: http://hermes:9119
-      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_API_KEY: ${HERMES_API_KEY:-3xZCR7ggVf5i96Ymm3fsBcVTo3YsBbXZTAMsP2XmHfZBmSWuvXBfzj9QLoevHDDu}
       HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL:-hermes}
       HERMES_TIMEOUT_SECONDS: ${HERMES_TIMEOUT_SECONDS:-60}
       ANYTHING_LLM_API_URL: http://rag:3001
-      ANYTHING_LLM_API_KEY: ${ANYTHING_LLM_API_KEY}
+      ANYTHING_LLM_API_KEY: ${ANYTHING_LLM_API_KEY:-G9RNP6S-0AC4424-JPWAMC6-5N841FR}
       ANYTHING_LLM_DEFAULT_WORKSPACE: ${ANYTHING_LLM_DEFAULT_WORKSPACE:-bighead-corporativo}
       CRM_PROVIDER_ENDPOINTS: ${CRM_PROVIDER_ENDPOINTS:-{}}
       OTEL_SERVICE_NAME: bighead-worker
@@ -161,13 +167,15 @@ services:
   # Domínio: hermes.fbr.news → porta 9119
   # ──────────────────────────────────────────────────
   hermes:
-    image: ${BIGHEAD_HERMES_IMAGE:-ghcr.io/fbrnews/bigheadct-hermes:latest}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.hermes
     restart: unless-stopped
     init: true
     environment:
       NODE_ENV: production
       PORT: "9119"
-      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_API_KEY: ${HERMES_API_KEY:-3xZCR7ggVf5i96Ymm3fsBcVTo3YsBbXZTAMsP2XmHfZBmSWuvXBfzj9QLoevHDDu}
       HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL:-hermes}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -195,7 +203,7 @@ services:
     environment:
       STORAGE_DIR: /app/server/storage
       JWT_SECRET: ${ANYTHINGLLM_JWT_SECRET:-supersecretanythingllmjwtkey32chars}
-      AUTH_TOKEN: ${ANYTHING_LLM_API_KEY}
+      AUTH_TOKEN: ${ANYTHING_LLM_API_KEY:-G9RNP6S-0AC4424-JPWAMC6-5N841FR}
       DISABLE_TELEMETRY: "true"
       LLM_PROVIDER: ${ANYTHINGLLM_LLM_PROVIDER:-openai}
       OPEN_AI_KEY: ${OPENAI_API_KEY:-}
@@ -223,11 +231,11 @@ services:
     command:
       - /bin/sh
       - -ec
-      - exec redis-server --appendonly yes --requirepass "${REDIS_PASSWORD}"
+      - exec redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:-Super1404@@@}"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD} redis-cli ping | grep PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD:-Super1404@@@} redis-cli ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
