@@ -194,7 +194,7 @@ services:
       - SYS_ADMIN   # necessário para chromium headless interno
     environment:
       STORAGE_DIR: /app/server/storage
-      JWT_SECRET: ${ANYTHINGLLM_JWT_SECRET}
+      JWT_SECRET: ${ANYTHINGLLM_JWT_SECRET:-supersecretanythingllmjwtkey32chars}
       AUTH_TOKEN: ${ANYTHING_LLM_API_KEY}
       DISABLE_TELEMETRY: "true"
       LLM_PROVIDER: ${ANYTHINGLLM_LLM_PROVIDER:-openai}
