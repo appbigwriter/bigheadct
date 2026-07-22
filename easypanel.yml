@@ -1,0 +1,261 @@
+﻿# BigHead — Easypanel App Stack
+# Deploy: cole este arquivo no campo "Compose" ao criar um App Stack no Easypanel.
+# O Traefik do Easypanel gerencia TLS/HTTPS e roteamento por domínio automaticamente.
+# Configure os domínios de cada serviço na aba "Domains" do painel após criar o stack.
+#
+# Domínios esperados:
+#   web     → bighead.fbr.news        (porta 3000)
+#   api     → bighead-api.fbr.news    (porta 8000)
+#   hermes  → hermes.fbr.news         (porta 8642)
+#   rag     → rag.fbr.news            (porta 3001)
+#
+# Serviços internos (sem domínio exposto):
+#   worker, redis, clamav
+
+name: bighead
+
+services:
+
+  # ──────────────────────────────────────────────────
+  # Frontend — Next.js 15
+  # Domínio: bighead.fbr.news → porta 3000
+  # ──────────────────────────────────────────────────
+  web:
+    image: ${BIGHEAD_WEB_IMAGE:-ghcr.io/fbrnews/bigheadct-web:latest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      APP_URL: https://bighead.fbr.news
+      API_URL: https://bighead-api.fbr.news
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      SUPABASE_AUTH_SITE_URL: https://bighead.fbr.news
+      SUPABASE_AUTH_REDIRECT_URLS: https://bighead.fbr.news/auth/callback
+      SUPABASE_AUTH_SMTP_CONFIGURED: ${SUPABASE_AUTH_SMTP_CONFIGURED:-true}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  # ──────────────────────────────────────────────────
+  # API — FastAPI / Python 3.14
+  # Domínio: bighead-api.fbr.news → porta 8000
+  # ──────────────────────────────────────────────────
+  api:
+    image: ${BIGHEAD_API_IMAGE:-ghcr.io/fbrnews/bigheadct-api:latest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      APP_ENV: production
+      APP_URL: https://bighead.fbr.news
+      API_URL: https://bighead-api.fbr.news
+      API_PORT: "8000"
+      CORS_ORIGINS: https://bighead.fbr.news
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_SERVICE_URL: ${DATABASE_SERVICE_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-artifacts}
+      SIGNED_URL_TTL_SECONDS: ${SIGNED_URL_TTL_SECONDS:-900}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      QUEUE_NAME: ${QUEUE_NAME:-bighead:jobs}
+      JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-300}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET}
+      PORTAL_TOKEN_PEPPER: ${PORTAL_TOKEN_PEPPER}
+      OTEL_SERVICE_NAME: bighead-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)); raise SystemExit(0 if data.get('status') == 'ready' else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  # ──────────────────────────────────────────────────
+  # Worker — ARQ async job processor
+  # Sem domínio público (serviço interno)
+  # ──────────────────────────────────────────────────
+  worker:
+    image: ${BIGHEAD_WORKER_IMAGE:-ghcr.io/fbrnews/bigheadct-worker:latest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      QUEUE_NAME: ${QUEUE_NAME:-bighead:jobs}
+      JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-300}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-artifacts}
+      MALWARE_SCANNER_URL: ${MALWARE_SCANNER_URL:-clamd://clamav:3310}
+      MALWARE_SCANNER_API_KEY: ${MALWARE_SCANNER_API_KEY:-}
+      RUN_PROVIDER_URL: ${RUN_PROVIDER_URL:-}
+      RUN_PROVIDER_API_KEY: ${RUN_PROVIDER_API_KEY:-}
+      RUN_PROVIDER_TIMEOUT_SECONDS: ${RUN_PROVIDER_TIMEOUT_SECONDS:-60}
+      LLM_PROVIDER_DEFAULT: ${LLM_PROVIDER_DEFAULT}
+      LLM_PROVIDER_FALLBACK: ${LLM_PROVIDER_FALLBACK}
+      LLM_MODEL_DEFAULT: ${LLM_MODEL_DEFAULT}
+      LLM_MODEL_FALLBACK: ${LLM_MODEL_FALLBACK}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+      HERMES_API_URL: http://hermes:8642
+      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL:-hermes}
+      HERMES_TIMEOUT_SECONDS: ${HERMES_TIMEOUT_SECONDS:-60}
+      ANYTHING_LLM_API_URL: http://rag:3001
+      ANYTHING_LLM_API_KEY: ${ANYTHING_LLM_API_KEY}
+      ANYTHING_LLM_DEFAULT_WORKSPACE: ${ANYTHING_LLM_DEFAULT_WORKSPACE:-bighead-corporativo}
+      CRM_PROVIDER_ENDPOINTS: ${CRM_PROVIDER_ENDPOINTS:-{}}
+      OTEL_SERVICE_NAME: bighead-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+      hermes:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  # ──────────────────────────────────────────────────
+  # Hermes — LLM Gateway (Node.js)
+  # Domínio: hermes.fbr.news → porta 8642
+  # ──────────────────────────────────────────────────
+  hermes:
+    image: ${BIGHEAD_HERMES_IMAGE:-ghcr.io/fbrnews/bigheadct-hermes:latest}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: "8642"
+      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_DEFAULT_MODEL: ${HERMES_DEFAULT_MODEL:-hermes}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8642/health/ready').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  # ──────────────────────────────────────────────────
+  # AnythingLLM — RAG / Knowledge Base
+  # Domínio: rag.fbr.news → porta 3001
+  # ──────────────────────────────────────────────────
+  rag:
+    image: mintplexlabs/anythingllm:latest
+    restart: unless-stopped
+    init: true
+    cap_add:
+      - SYS_ADMIN   # necessário para chromium headless interno
+    environment:
+      STORAGE_DIR: /app/server/storage
+      JWT_SECRET: ${ANYTHINGLLM_JWT_SECRET}
+      AUTH_TOKEN: ${ANYTHING_LLM_API_KEY}
+      DISABLE_TELEMETRY: "true"
+      LLM_PROVIDER: ${ANYTHINGLLM_LLM_PROVIDER:-openai}
+      OPEN_AI_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+      VECTOR_DB: lancedb
+    volumes:
+      - anythingllm_storage:/app/server/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3001/api/ping"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
+  # ──────────────────────────────────────────────────
+  # Redis — Message broker / cache
+  # Serviço interno — sem domínio público
+  # ──────────────────────────────────────────────────
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    init: true
+    user: "999:1000"
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "${REDIS_PASSWORD}"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD} redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  # ──────────────────────────────────────────────────
+  # ClamAV — Antivírus / malware scanner
+  # Serviço interno — sem domínio público
+  # ⚠️  Consome ~1 GB RAM e leva ~2 min para inicializar
+  # ──────────────────────────────────────────────────
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    init: true
+    volumes:
+      - clamav_db:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  redis_data:
+  clamav_db:
+  anythingllm_storage:

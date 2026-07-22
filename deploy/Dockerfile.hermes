@@ -1,9 +1,14 @@
-# syntax=docker/dockerfile:1.7
+﻿# syntax=docker/dockerfile:1.7
 FROM node:24.11.1-bookworm-slim AS production
 
 WORKDIR /app
+
+RUN groupadd --gid 10001 bighead \
+    && useradd --uid 10001 --gid bighead --create-home --home-dir /home/bighead bighead
+
 COPY apps/hermes/server.mjs /app/server.mjs
 
+USER 10001:10001
 EXPOSE 8642
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:8642/health/ready').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]

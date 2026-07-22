@@ -1,0 +1,100 @@
+# ==============================================================================
+# BigHead — Exemplo de Variáveis de Ambiente para o Easypanel
+# Copie e preencha as variáveis abaixo nas configurações de cada serviço no Easypanel.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Domínios e URLs Globais
+# ------------------------------------------------------------------------------
+APP_ENV=production
+APP_URL=https://bighead.fbr.news
+API_URL=https://bighead-api.fbr.news
+CORS_ORIGINS=https://bighead.fbr.news
+LOG_LEVEL=INFO
+
+# ------------------------------------------------------------------------------
+# Imagens Docker (GitHub Container Registry)
+# Substitua <org-ou-usuario> pelo nome da sua organização/usuário no GitHub
+# ------------------------------------------------------------------------------
+BIGHEAD_WEB_IMAGE=ghcr.io/<org-ou-usuario>/bigheadct-web:latest
+BIGHEAD_API_IMAGE=ghcr.io/<org-ou-usuario>/bigheadct-api:latest
+BIGHEAD_WORKER_IMAGE=ghcr.io/<org-ou-usuario>/bigheadct-worker:latest
+BIGHEAD_HERMES_IMAGE=ghcr.io/<org-ou-usuario>/bigheadct-hermes:latest
+
+# ------------------------------------------------------------------------------
+# Supabase Self-Hosted (supabase.fbr.news)
+# ------------------------------------------------------------------------------
+SUPABASE_URL=https://supabase.fbr.news
+SUPABASE_PUBLIC_URL=https://supabase.fbr.news
+NEXT_PUBLIC_SUPABASE_URL=https://supabase.fbr.news
+SUPABASE_PUBLISHABLE_KEY=sb_pub_<copiar-do-supabase-self-hosted>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_pub_<copiar-do-supabase-self-hosted>
+SUPABASE_SECRET_KEY=sb_sec_<copiar-service-role-do-supabase-self-hosted>
+SUPABASE_PROJECT_REF=default
+SUPABASE_AUTH_SITE_URL=https://bighead.fbr.news
+SUPABASE_AUTH_REDIRECT_URLS=https://bighead.fbr.news/auth/callback
+SUPABASE_AUTH_SMTP_CONFIGURED=true
+
+# ------------------------------------------------------------------------------
+# Banco de Dados PostgreSQL Direto / Pooler (bd.bighead.fbr.news)
+# ------------------------------------------------------------------------------
+DATABASE_URL=postgresql://postgres:<senha-postgres>@bd.bighead.fbr.news:5432/postgres?sslmode=require
+DATABASE_SERVICE_URL=postgresql://postgres:<senha-postgres>@bd.bighead.fbr.news:5432/postgres?sslmode=require
+DIRECT_DATABASE_URL=postgresql://postgres:<senha-postgres>@bd.bighead.fbr.news:5432/postgres?sslmode=require
+
+# ------------------------------------------------------------------------------
+# Storage e Segurança Interna
+# ------------------------------------------------------------------------------
+STORAGE_BUCKET=artifacts
+SIGNED_URL_TTL_SECONDS=900
+
+# Gere com: openssl rand -hex 32
+REDIS_PASSWORD=<copiar-do-openssl-rand-hex-32>
+ENCRYPTION_KEY=<copiar-do-openssl-rand-hex-32>
+WEBHOOK_SIGNING_SECRET=<copiar-do-openssl-rand-hex-32>
+PORTAL_TOKEN_PEPPER=<copiar-do-openssl-rand-hex-32>
+
+# Queue ARQ
+QUEUE_NAME=bighead:jobs
+JOB_LEASE_SECONDS=300
+
+# Scanner Malware
+MALWARE_SCANNER_URL=clamd://clamav:3310
+
+# ------------------------------------------------------------------------------
+# Hermes — LLM Gateway (hermes.fbr.news)
+# ------------------------------------------------------------------------------
+HERMES_API_URL=http://hermes:8642
+HERMES_API_KEY=<copiar-do-openssl-rand-hex-32>
+HERMES_DEFAULT_MODEL=hermes
+HERMES_TIMEOUT_SECONDS=60
+
+# ------------------------------------------------------------------------------
+# AnythingLLM — RAG / Knowledge Base (rag.fbr.news)
+# ------------------------------------------------------------------------------
+ANYTHING_LLM_API_URL=http://rag:3001
+ANYTHING_LLM_API_KEY=<token-gerado-no-painel-do-anythingllm>
+ANYTHING_LLM_DEFAULT_WORKSPACE=bighead-corporativo
+ANYTHINGLLM_JWT_SECRET=<copiar-do-openssl-rand-hex-32>
+ANYTHINGLLM_LLM_PROVIDER=openai
+
+# ------------------------------------------------------------------------------
+# Provedores de Inteligência Artificial (LLMs)
+# ------------------------------------------------------------------------------
+LLM_PROVIDER_DEFAULT=hermes
+LLM_PROVIDER_FALLBACK=openai
+LLM_MODEL_DEFAULT=hermes
+LLM_MODEL_FALLBACK=gpt-4o
+LLM_TIMEOUT_SECONDS=60
+
+# Chaves das APIs (preencher as aplicáveis)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_GENAI_API_KEY=AIzaSy...
+
+# ------------------------------------------------------------------------------
+# Observabilidade (Opcional)
+# ------------------------------------------------------------------------------
+SENTRY_DSN=
+OTEL_EXPORTER_OTLP_ENDPOINT=
+OTEL_EXPORTER_OTLP_HEADERS=
