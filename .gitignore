@@ -26,3 +26,21 @@ supabase/.temp
 
 # Sentry Config File
 .env.sentry-build-plugin
+.env.production
+.env.local
+.env.supabase
+.env.postgres
+.env.redis
+.env.auth
+.env.llm
+.env.hermes
+.env.supabase-db
+.env.supabase-storage
+.env.supabase-auth
+.env.supabase-realtime
+.env.supabase-studio
+.env.supabase-storage
+.env.supabase-auth
+.env.supabase-realtime
+.env.supabase-studio
+.env.supabase.conf
