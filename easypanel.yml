@@ -92,7 +92,7 @@ services:
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
     healthcheck:
-      test: ["CMD", "python", "-c", "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)); raise SystemExit(0 if data.get('status') == 'ready' else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request; resp=urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3); raise SystemExit(0 if resp.status == 200 else 1)"]
       interval: 30s
       timeout: 10s
       start_period: 30s
@@ -181,7 +181,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9119/health/ready').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9119/health/live').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 20s
