@@ -26,5 +26,5 @@ COPY --from=builder --chown=bighead:bighead /app/.venv /app/.venv
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD ["python", "-c", "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)); raise SystemExit(0 if data.get('status') == 'ready' else 1)"]
+  CMD ["python", "-c", "import urllib.request; resp=urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3); raise SystemExit(0 if resp.status == 200 else 1)"]
 CMD ["uvicorn", "bighead_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
