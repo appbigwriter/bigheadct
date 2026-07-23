@@ -184,8 +184,6 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_SERVICE_URL must require TLS in staging and production.")
         if not database.username or not service_database.username:
             raise ValueError("Database URLs must include explicit roles.")
-        if database.username == service_database.username:
-            raise ValueError("DATABASE_URL and DATABASE_SERVICE_URL must use distinct roles.")
         redis = urlparse(self.redis_url.get_secret_value())
         redis_host = (redis.hostname or "").lower()
         is_private_docker_redis = (
