@@ -39,6 +39,8 @@ services:
       API_URL: https://bighead-api.fbr.news
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://supabase.fbr.news}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://supabase.fbr.news}
+      SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
       SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
       SUPABASE_AUTH_SITE_URL: https://bighead.fbr.news
       SUPABASE_AUTH_REDIRECT_URLS: https://bighead.fbr.news/auth/callback

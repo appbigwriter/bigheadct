@@ -80,9 +80,12 @@ jobs:
     name: Trigger Easypanel Deploy
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && secrets.EASYPANEL_WEBHOOK_URL != ''
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    env:
+      WEBHOOK_URL: ${{ secrets.EASYPANEL_WEBHOOK_URL }}
     steps:
       - name: Trigger Webhook
+        if: env.WEBHOOK_URL != ''
         run: |
           curl -X POST "${{ secrets.EASYPANEL_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
