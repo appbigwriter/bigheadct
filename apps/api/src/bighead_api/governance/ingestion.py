@@ -40,7 +40,7 @@ class KnowledgeIngestionService:
             artifact = await conn.fetchrow(
                 """select id, name, storage_path, checksum_sha256, mime_type,
                           size_bytes, quarantine_status::text
-                     from public.artifacts
+                     from bighead.artifacts
                     where id=$1 and organization_id=$2""",
                 artifact_id,
                 organization_id,
@@ -58,7 +58,7 @@ class KnowledgeIngestionService:
             # 2. Verifica idempotência
             existing = await conn.fetchrow(
                 """select status, external_document_id
-                     from public.anything_llm_ingestions
+                     from bighead.anything_llm_ingestions
                     where artifact_id=$1 and organization_id=$2""",
                 artifact_id,
                 organization_id,
@@ -77,7 +77,7 @@ class KnowledgeIngestionService:
 
             # Registra/Atualiza o status como 'processing'
             await conn.execute(
-                """insert into public.anything_llm_ingestions
+                """insert into bighead.anything_llm_ingestions
                       (artifact_id, organization_id, workspace, status,
                        checksum_sha256, mime_type, size_bytes)
                    values ($1, $2, $3, 'processing', $4, $5, $6)
@@ -135,7 +135,7 @@ class KnowledgeIngestionService:
         # 5. Sucesso: Grava e atualiza o status de sucesso com o id do documento externo
         async with self.database.privileged() as conn:
             await conn.execute(
-                """update public.anything_llm_ingestions
+                """update bighead.anything_llm_ingestions
                       set status = 'success',
                           external_document_id = $3,
                           embeddings_updated_at = now(),
@@ -160,7 +160,7 @@ class KnowledgeIngestionService:
         """Grava com segurança as falhas na tabela anything_llm_ingestions para auditoria."""
         async with self.database.privileged() as conn:
             await conn.execute(
-                """update public.anything_llm_ingestions
+                """update bighead.anything_llm_ingestions
                       set status = 'failed',
                           error_code = $3,
                           error_message = $4,

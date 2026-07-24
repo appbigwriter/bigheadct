@@ -115,7 +115,7 @@ class CommercialRepository(Protocol):
             except ValueError:
                 return {"row": row_number, "action": "rejected", "reason": "invalid ownerId"}
             valid_owner = await conn.fetchval(
-                """select exists(select 1 from public.organization_members
+                """select exists(select 1 from bighead.organization_members
                     where organization_id=$1 and user_id=$2 and status='active')""",
                 organization_id,
                 requested_owner,
@@ -127,7 +127,7 @@ class CommercialRepository(Protocol):
         account = None
         if domain is not None:
             account = await conn.fetchrow(
-                "select id from public.crm_accounts where organization_id=$1 and domain=$2",
+                "select id from bighead.crm_accounts where organization_id=$1 and domain=$2",
                 organization_id,
                 domain,
             )
@@ -140,7 +140,7 @@ class CommercialRepository(Protocol):
             }
         else:
             account_id = await conn.fetchval(
-                """insert into public.crm_accounts(
+                """insert into bighead.crm_accounts(
                     organization_id,name,domain,owner_user_id,metadata
                 ) values($1,$2,$3,$4,$5::jsonb) returning id""",
                 organization_id,
@@ -153,7 +153,7 @@ class CommercialRepository(Protocol):
         contact_id: UUID | None = None
         if email and contact_name:
             contact_id = await conn.fetchval(
-                """insert into public.crm_contacts(
+                """insert into bighead.crm_contacts(
                     organization_id,account_id,name,email,phone,consent_status,legal_basis,metadata
                 ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
                 on conflict (organization_id,email) do update set
@@ -172,7 +172,7 @@ class CommercialRepository(Protocol):
             report["contactId"] = str(contact_id)
         if bool(item.get("createLead", True)) and consent_status == "granted":
             lead_id = await conn.fetchval(
-                """insert into public.leads(
+                """insert into bighead.leads(
                     organization_id,account_id,contact_id,owner_user_id,status,source,
                     icp_score,score_factors,score_algorithm_version,next_action
                 ) values($1,$2,$3,$4,'new',$5,$6,$7::jsonb,$8,$9) returning id""",
@@ -300,7 +300,7 @@ class PostgresCommercialRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
                 """select id,title,source_type,source_uri,confidentiality::text classification,
-              review_status::text status,metadata,created_at from public.knowledge_documents
+              review_status::text status,metadata,created_at from bighead.knowledge_documents
               where organization_id=$1 and ($2::text is null or review_status::text=$2)
                 and ($3::text is null or confidentiality::text=$3)
               order by created_at desc,id desc limit $4""",
@@ -313,7 +313,7 @@ class PostgresCommercialRepository:
                 """select count(*)::int total,
               count(*) filter(where review_status='approved')::int approved,
               count(*) filter(where review_status in ('draft','pending'))::int processing
-              from public.knowledge_documents where organization_id=$1""",
+              from bighead.knowledge_documents where organization_id=$1""",
                 organization_id,
             )
         return {
@@ -338,7 +338,7 @@ class PostgresCommercialRepository:
             artifact = await conn.fetchrow(
                 """select a.id,a.name,a.storage_bucket,a.storage_path,a.checksum_sha256,
                           a.mime_type,a.size_bytes,o.slug workspace
-                     from public.artifacts a join public.organizations o on o.id=a.organization_id
+                     from bighead.artifacts a join bighead.organizations o on o.id=a.organization_id
                     where a.id=$1 and a.organization_id=$2 and a.created_by=$3
                       and storage_bucket='artifacts' and quarantine_status='clean'
                       and checksum_sha256 ~ '^[0-9a-f]{64}$'
@@ -357,7 +357,7 @@ class PostgresCommercialRepository:
                     detail="Artifact must be clean, tenant-scoped and owned by the requester",
                 )
             existing = await conn.fetchrow(
-                """select id,metadata from public.knowledge_documents where organization_id=$1
+                """select id,metadata from bighead.knowledge_documents where organization_id=$1
                   and metadata->>'idempotency_key'=$2 order by created_at desc limit 1""",
                 organization_id,
                 idempotency_key,
@@ -380,7 +380,7 @@ class PostgresCommercialRepository:
                 "expected_size_bytes": artifact["size_bytes"],
             }
             row = await conn.fetchrow(
-                """insert into public.knowledge_documents
+                """insert into bighead.knowledge_documents
               (id,organization_id,title,source_type,source_uri,storage_path,confidentiality,review_status,metadata,created_by)
               values($1,$2,$3,'upload',$4,$5,$6,'pending',$7::jsonb,$8) returning id""",
                 document_id,
@@ -395,7 +395,7 @@ class PostgresCommercialRepository:
             if not row:
                 raise HTTPException(status_code=403, detail="Active tenant membership required")
             await conn.execute(
-                """insert into public.anything_llm_ingestions
+                """insert into bighead.anything_llm_ingestions
                   (artifact_id,organization_id,workspace,status,checksum_sha256,mime_type,size_bytes)
                    values($1,$2,$3,'pending',$4,$5,$6)
                    on conflict (artifact_id) do update set
@@ -443,7 +443,7 @@ class PostgresCommercialRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
                 """select id,kind::text,content,source_reference source,confidence::float8,
-              review_status::text status,valid_until,created_at from public.memory_items
+              review_status::text status,valid_until,created_at from bighead.memory_items
               where organization_id=$1 and ($2::text is null or kind::text=$2)
                 and ($3::text is null or review_status::text=$3)
                 and review_status not in ('contested','expired','archived') and (valid_until is null or valid_until>now())
@@ -486,14 +486,14 @@ class PostgresCommercialRepository:
         if threshold < -1 or threshold > 1:
             raise HTTPException(status_code=422, detail="Invalid similarity threshold")
         async with self.database.authenticated(user_id, organization_id) as conn:
-            active_dimensions = await conn.fetchval("select public.active_embedding_dimensions()")
+            active_dimensions = await conn.fetchval("select bighead.active_embedding_dimensions()")
             if len(payload.filters["embedding"]) != active_dimensions:
                 raise HTTPException(
                     status_code=422,
                     detail={"code": "embedding_dimension_mismatch", "expected": active_dimensions},
                 )
             actual_role = await conn.fetchval(
-                """select role::text from public.organization_members
+                """select role::text from bighead.organization_members
                     where organization_id=$1 and user_id=$2 and status='active'""",
                 organization_id,
                 user_id,
@@ -505,10 +505,10 @@ class PostgresCommercialRepository:
             rows = await conn.fetch(
                 """select m.chunk_id id,m.content,m.document_id,d.title,d.source_uri,
                           d.confidentiality::text classification,m.similarity score,m.metadata
-                     from public.match_knowledge($1,$2::extensions.vector,$3,$4) m
-                     join public.knowledge_documents d
+                     from bighead.match_knowledge($1,$2::extensions.vector,$3,$4) m
+                     join bighead.knowledge_documents d
                        on d.id=m.document_id and d.organization_id=$1
-                    where d.confidentiality <= $5::public.risk_level
+                    where d.confidentiality <= $5::bighead.risk_level
                     order by m.similarity desc,m.chunk_id""",
                 organization_id,
                 embedding,
@@ -570,7 +570,7 @@ class PostgresCommercialRepository:
                 {"owner", "admin", "manager", "analyst"},
             )
             existing = await conn.fetchrow(
-                """select aggregate_id,payload from public.event_outbox where organization_id=$1
+                """select aggregate_id,payload from bighead.event_outbox where organization_id=$1
                   and event_type='crm.import.requested' and payload->>'idempotencyKey'=$2 order by created_at desc limit 1""",
                 organization_id,
                 idempotency_key,
@@ -640,7 +640,7 @@ class PostgresCommercialRepository:
                         )
                         continue
                     valid_owner = await conn.fetchval(
-                        """select exists(select 1 from public.organization_members
+                        """select exists(select 1 from bighead.organization_members
                              where organization_id=$1 and user_id=$2 and status='active')""",
                         organization_id,
                         requested_owner,
@@ -655,7 +655,7 @@ class PostgresCommercialRepository:
                 existing = None
                 if domain is not None:
                     existing = await conn.fetchrow(
-                        "select id,name from public.crm_accounts where organization_id=$1 and domain=$2",
+                        "select id,name from bighead.crm_accounts where organization_id=$1 and domain=$2",
                         organization_id,
                         domain,
                     )
@@ -666,7 +666,7 @@ class PostgresCommercialRepository:
                     )
                 else:
                     account_id = await conn.fetchval(
-                        "insert into public.crm_accounts(organization_id,name,domain,owner_user_id,metadata) values($1,$2,$3,$4,$5::jsonb) returning id",
+                        "insert into bighead.crm_accounts(organization_id,name,domain,owner_user_id,metadata) values($1,$2,$3,$4,$5::jsonb) returning id",
                         organization_id,
                         name,
                         domain,
@@ -677,7 +677,7 @@ class PostgresCommercialRepository:
                 contact_id: UUID | None = None
                 if email and contact_name:
                     contact_id = await conn.fetchval(
-                        """insert into public.crm_contacts(
+                        """insert into bighead.crm_contacts(
                              organization_id,account_id,name,email,phone,consent_status,legal_basis,metadata
                            ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
                            on conflict (organization_id,email) do update set
@@ -697,7 +697,7 @@ class PostgresCommercialRepository:
                     dedupe[-1]["contactId"] = str(contact_id)
                 if bool(item.get("createLead", True)) and consent_status == "granted":
                     lead_id = await conn.fetchval(
-                        """insert into public.leads(
+                        """insert into bighead.leads(
                              organization_id,account_id,contact_id,owner_user_id,status,source,
                              icp_score,score_factors,score_algorithm_version,next_action
                            ) values($1,$2,$3,$4,'new',$5,$6,$7::jsonb,$8,$9) returning id""",
@@ -725,7 +725,7 @@ class PostgresCommercialRepository:
                 "status": "completed" if accepted == len(payload.rows) else "partial",
             }
             await conn.execute(
-                """insert into public.crm_imports(
+                """insert into bighead.crm_imports(
                      id,organization_id,source,consent_basis,idempotency_key,fingerprint,status,
                      total_rows,accepted_rows,failed_rows,created_by
                    ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
@@ -745,7 +745,7 @@ class PostgresCommercialRepository:
                 report = dedupe[index]
                 row_status = "failed" if report["action"] == "rejected" else "accepted"
                 await conn.execute(
-                    """insert into public.crm_import_rows(
+                    """insert into bighead.crm_import_rows(
                          import_id,organization_id,row_number,payload,status,action,account_id,
                          contact_id,lead_id,attempts,error_code,error_detail
                        ) values($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,1,$10,$11)""",
@@ -817,7 +817,7 @@ class PostgresCommercialRepository:
             )
             allowed = await conn.fetchrow(
                 """select i.source,i.consent_basis
-                     from public.crm_imports i join public.organization_members m
+                     from bighead.crm_imports i join bighead.organization_members m
                        on m.organization_id=i.organization_id and m.user_id=$3 and m.status='active'
                     where i.id=$1 and i.organization_id=$2 for update of i""",
                 import_id,
@@ -829,7 +829,7 @@ class PostgresCommercialRepository:
             rows = await conn.fetch(
                 """select row_number,status,action,account_id,contact_id,lead_id,error_detail,
                           last_resume_fingerprint
-                     from public.crm_import_rows
+                     from bighead.crm_import_rows
                     where import_id=$1 and organization_id=$2
                       and row_number=any($3::integer[]) order by row_number for update""",
                 import_id,
@@ -859,7 +859,7 @@ class PostgresCommercialRepository:
                 reports.append(report)
                 row_status = "failed" if report["action"] == "rejected" else "accepted"
                 await conn.execute(
-                    """update public.crm_import_rows set payload=$4::jsonb,status=$5,action=$6,
+                    """update bighead.crm_import_rows set payload=$4::jsonb,status=$5,action=$6,
                          account_id=$7,contact_id=$8,lead_id=$9,attempts=attempts+1,
                          error_code=$10,error_detail=$11,last_resume_fingerprint=$12,
                          last_resume_at=now(),updated_at=now()
@@ -880,7 +880,7 @@ class PostgresCommercialRepository:
             summary = await self._crm_import_summary(conn, import_id, organization_id)
             final_status = "completed" if summary["rejected"] == 0 else "partial"
             await conn.execute(
-                """update public.crm_imports set status=$3,accepted_rows=$4,failed_rows=$5,updated_at=now()
+                """update bighead.crm_imports set status=$3,accepted_rows=$4,failed_rows=$5,updated_at=now()
                     where id=$1 and organization_id=$2""",
                 import_id,
                 organization_id,
@@ -904,7 +904,7 @@ class PostgresCommercialRepository:
             """select count(*)::int total,
                 count(*) filter(where status='accepted')::int accepted,
                 count(*) filter(where status='failed')::int rejected
-               from public.crm_import_rows where import_id=$1 and organization_id=$2""",
+               from bighead.crm_import_rows where import_id=$1 and organization_id=$2""",
             import_id,
             organization_id,
         )
@@ -946,7 +946,7 @@ class PostgresCommercialRepository:
             raise HTTPException(status_code=403, detail="Manager role required")
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members
+                """select exists(select 1 from bighead.organization_members
                     where organization_id=$1 and user_id=$2 and status='active'
                       and role in ('owner','admin','manager'))""",
                 organization_id,
@@ -982,7 +982,7 @@ class PostgresCommercialRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
                 """select id,account_id,contact_id,owner_user_id,status::text,source,icp_score::float8,
-              score_factors,score_algorithm_version,next_action,next_action_at,created_at from public.leads where organization_id=$1
+              score_factors,score_algorithm_version,next_action,next_action_at,created_at from bighead.leads where organization_id=$1
               and ($2::text is null or status::text=$2) and ($3::uuid is null or owner_user_id=$3)
               order by icp_score desc nulls last,created_at desc limit $4""",
                 organization_id,
@@ -991,7 +991,7 @@ class PostgresCommercialRepository:
                 limit,
             )
             counts = await conn.fetchrow(
-                "select count(*)::int total,count(*) filter(where status='qualified')::int qualified from public.leads where organization_id=$1",
+                "select count(*)::int total,count(*) filter(where status='qualified')::int qualified from bighead.leads where organization_id=$1",
                 organization_id,
             )
         return {
@@ -1013,8 +1013,8 @@ class PostgresCommercialRepository:
             existing = await conn.fetchrow(
                 """select id,account_id,contact_id,owner_user_id,status::text,source,icp_score::float8,
                           score_factors,score_algorithm_version,next_action,next_action_at,created_at
-                     from public.leads where organization_id=$1 and account_id in (
-                       select id from public.crm_accounts where organization_id=$1 and metadata->>'idempotency_key'=$2
+                     from bighead.leads where organization_id=$1 and account_id in (
+                       select id from bighead.crm_accounts where organization_id=$1 and metadata->>'idempotency_key'=$2
                      ) order by created_at desc limit 1""",
                 organization_id,
                 idempotency_key,
@@ -1025,7 +1025,7 @@ class PostgresCommercialRepository:
                     raise HTTPException(status_code=409, detail="Idempotency key payload conflict")
                 return {"lead": _model(Lead, existing), "replayed": True}
             account_id = await conn.fetchval(
-                """insert into public.crm_accounts(organization_id,name,owner_user_id,metadata)
+                """insert into bighead.crm_accounts(organization_id,name,owner_user_id,metadata)
                      values($1,$2,$3,$4::jsonb) returning id""",
                 organization_id,
                 payload.account_name,
@@ -1035,7 +1035,7 @@ class PostgresCommercialRepository:
             contact_id = None
             if payload.email or payload.contact_name:
                 contact_id = await conn.fetchval(
-                    """insert into public.crm_contacts(
+                    """insert into bighead.crm_contacts(
                            organization_id,account_id,name,email,phone,consent_status,legal_basis,metadata
                          ) values($1,$2,$3,$4,$5,'unknown',null,$6::jsonb) returning id""",
                     organization_id,
@@ -1046,7 +1046,7 @@ class PostgresCommercialRepository:
                     json.dumps({"lead_create": True}),
                 )
             lead_id = await conn.fetchval(
-                """insert into public.leads(
+                """insert into bighead.leads(
                        organization_id,account_id,contact_id,owner_user_id,status,source,
                        icp_score,score_factors,score_algorithm_version,next_action
                    ) values($1,$2,$3,$4,'new',$5,$6,$7::jsonb,$8,$9) returning id""",
@@ -1063,7 +1063,7 @@ class PostgresCommercialRepository:
             lead_row = await conn.fetchrow(
                 """select id,account_id,contact_id,owner_user_id,status::text,source,icp_score::float8,
                           score_factors,score_algorithm_version,next_action,next_action_at,created_at
-                     from public.leads where id=$1 and organization_id=$2""",
+                     from bighead.leads where id=$1 and organization_id=$2""",
                 lead_id,
                 organization_id,
             )
@@ -1075,14 +1075,14 @@ class PostgresCommercialRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             row = await conn.fetchrow(
                 """select id,account_id,contact_id,owner_user_id,status::text,source,icp_score::float8,
-              score_factors,score_algorithm_version,next_action,next_action_at,created_at from public.leads where id=$1 and organization_id=$2""",
+              score_factors,score_algorithm_version,next_action,next_action_at,created_at from bighead.leads where id=$1 and organization_id=$2""",
                 lead_id,
                 organization_id,
             )
             if not row:
                 raise HTTPException(status_code=404, detail="Lead not found")
             signals = await conn.fetch(
-                "select signal_type,strength::float8,source,payload,occurred_at from public.lead_signals where lead_id=$1 and organization_id=$2 order by occurred_at desc",
+                "select signal_type,strength::float8,source,payload,occurred_at from bighead.lead_signals where lead_id=$1 and organization_id=$2 order by occurred_at desc",
                 lead_id,
                 organization_id,
             )
@@ -1113,7 +1113,7 @@ class PostgresCommercialRepository:
             rows = await conn.fetch(
                 """select id,lead_id,account_id,name,stage,amount::float8,currency,
                           probability::float8,expected_close_date,updated_at
-                     from public.opportunities
+                     from bighead.opportunities
                     where organization_id=$1
                     order by stage,expected_close_date nulls last,updated_at desc,id""",
                 organization_id,
@@ -1153,7 +1153,7 @@ class PostgresCommercialRepository:
                 conn, organization_id, user_id, idempotency_key, "crm.follow_up", None
             )
             existing = await conn.fetchrow(
-                """select payload,occurred_at from public.lead_signals
+                """select payload,occurred_at from bighead.lead_signals
                     where organization_id=$1 and lead_id=$2 and signal_type='follow_up'
                       and payload->>'idempotencyKey'=$3
                     order by occurred_at desc limit 1""",
@@ -1169,7 +1169,7 @@ class PostgresCommercialRepository:
                     """select id,account_id,contact_id,owner_user_id,status::text,source,
                               icp_score::float8,score_factors,score_algorithm_version,
                               next_action,next_action_at,created_at
-                         from public.leads where id=$1 and organization_id=$2""",
+                         from bighead.leads where id=$1 and organization_id=$2""",
                     lead_id,
                     organization_id,
                 )
@@ -1188,7 +1188,7 @@ class PostgresCommercialRepository:
                     "replayed": True,
                 }
             lead_row = await conn.fetchrow(
-                """update public.leads set next_action=$3,next_action_at=$4
+                """update bighead.leads set next_action=$3,next_action_at=$4
                     where id=$1 and organization_id=$2
                     returning id,account_id,contact_id,owner_user_id,status::text,source,
                               icp_score::float8,score_factors,score_algorithm_version,
@@ -1209,7 +1209,7 @@ class PostgresCommercialRepository:
                 "fingerprint": fingerprint,
             }
             occurred_at = await conn.fetchval(
-                """insert into public.lead_signals(
+                """insert into bighead.lead_signals(
                        organization_id,lead_id,signal_type,strength,source,payload,occurred_at
                    ) values($1,$2,'follow_up',null,'bighead',$3::jsonb,now())
                    returning occurred_at""",
@@ -1218,7 +1218,7 @@ class PostgresCommercialRepository:
                 json.dumps(signal_payload),
             )
             await conn.execute(
-                """insert into public.audit_log(
+                """insert into bighead.audit_log(
                        organization_id,actor_user_id,actor_type,action,resource_type,
                        resource_id,risk_level,changes_redacted
                    ) values($1,$2,'user','lead.follow_up.created','lead',$3,'low',$4::jsonb)""",
@@ -1263,7 +1263,7 @@ class PostgresCommercialRepository:
             raise HTTPException(status_code=422, detail="Invalid opportunity stage")
         async with self.database.privileged() as conn:
             member = await conn.fetchval(
-                "select exists(select 1 from public.organization_members where organization_id=$1 and user_id=$2 and status='active' and role in ('owner','admin','manager'))",
+                "select exists(select 1 from bighead.organization_members where organization_id=$1 and user_id=$2 and status='active' and role in ('owner','admin','manager'))",
                 organization_id,
                 user_id,
             )
@@ -1271,7 +1271,7 @@ class PostgresCommercialRepository:
                 raise HTTPException(status_code=403, detail="Active manager membership required")
             current = await conn.fetchrow(
                 """select stage,amount,probability,expected_close_date,loss_reason,closed_at
-                     from public.opportunities where id=$1 and organization_id=$2 for update""",
+                     from bighead.opportunities where id=$1 and organization_id=$2 for update""",
                 opportunity_id,
                 organization_id,
             )
@@ -1305,7 +1305,7 @@ class PostgresCommercialRepository:
             if missing:
                 raise HTTPException(status_code=422, detail={"missingFields": missing})
             row = await conn.fetchrow(
-                """update public.opportunities set stage=$3,amount=$4,probability=$5,
+                """update bighead.opportunities set stage=$3,amount=$4,probability=$5,
               expected_close_date=$6,loss_reason=case when $3='lost' then $7 else null end,
               closed_at=case when $3 in ('won','lost') then coalesce(closed_at,now()) else null end
               where id=$1 and organization_id=$2 returning id,name,stage,amount::float8,currency,probability::float8,expected_close_date""",
@@ -1351,7 +1351,7 @@ class PostgresCommercialRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
                 """select distinct c.id,c.name,c.objective,c.status,c.budget::float8,c.starts_at,c.ends_at,c.created_at
-              from public.campaigns c left join public.content_assets a on a.campaign_id=c.id and a.organization_id=c.organization_id
+              from bighead.campaigns c left join bighead.content_assets a on a.campaign_id=c.id and a.organization_id=c.organization_id
               where c.organization_id=$1 and ($2::text is null or c.status=$2) and ($3::text is null or a.channel=$3)
               order by c.created_at desc limit $4""",
                 organization_id,
@@ -1368,7 +1368,7 @@ class PostgresCommercialRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
                 """select id,campaign_id,title,content_type,status::text,body,channel,scheduled_at,published_at,external_id,created_at,updated_at
-              from public.content_assets where organization_id=$1 order by updated_at desc,id desc limit $2""",
+              from bighead.content_assets where organization_id=$1 order by updated_at desc,id desc limit $2""",
                 organization_id,
                 limit,
             )
@@ -1409,7 +1409,7 @@ class PostgresCommercialRepository:
             )
             existing = await conn.fetchrow(
                 """select id,campaign_id,title,content_type,status::text,body,channel,scheduled_at,published_at,external_id,created_at,updated_at
-                  from public.content_assets where organization_id=$1 and body->>'idempotency_key'=$2 order by created_at desc limit 1""",
+                  from bighead.content_assets where organization_id=$1 and body->>'idempotency_key'=$2 order by created_at desc limit 1""",
                 organization_id,
                 idempotency_key,
             )
@@ -1425,7 +1425,7 @@ class PostgresCommercialRepository:
                         detail="Approved content must identify its approval task",
                     )
                 approval_exists = await conn.fetchval(
-                    """select exists(select 1 from public.approval_requests
+                    """select exists(select 1 from bighead.approval_requests
                          where organization_id=$1 and id=$2 and status='pending'
                            and decided_at is null and task_id=$3)""",
                     organization_id,
@@ -1438,13 +1438,13 @@ class PostgresCommercialRepository:
                         detail="Approval request must be pending in the content tenant",
                     )
             row = await conn.fetchrow(
-                """insert into public.content_assets(
+                """insert into bighead.content_assets(
                      organization_id,campaign_id,task_id,title,content_type,status,body,channel,
                      approval_request_id,approval_payload_hash
                    )
-              select $1,$2,$9,$3,'multichannel','draft',$4::jsonb,$5,$7,$8 where exists(select 1 from public.organization_members
+              select $1,$2,$9,$3,'multichannel','draft',$4::jsonb,$5,$7,$8 where exists(select 1 from bighead.organization_members
                 where organization_id=$1 and user_id=$6 and status='active') and ($2::uuid is null or exists(
-                select 1 from public.campaigns where id=$2 and organization_id=$1))
+                select 1 from bighead.campaigns where id=$2 and organization_id=$1))
               returning id,campaign_id,title,content_type,status::text,body,channel,scheduled_at,published_at,external_id,created_at,updated_at""",
                 organization_id,
                 payload.campaign_id,
@@ -1493,7 +1493,7 @@ class PostgresCommercialRepository:
             await self._authorize_and_lock(conn, organization_id, user_id, key, "t45", None)
             row = await conn.fetchrow(
                 """select id,status::text,body,channel,approval_request_id,approval_payload_hash
-                     from public.content_assets
+                     from bighead.content_assets
                     where id=$1 and organization_id=$2 for update""",
                 asset_id,
                 organization_id,
@@ -1504,11 +1504,11 @@ class PostgresCommercialRepository:
             payload_hash = _fingerprint(body)
             approved = await conn.fetchval(
                 """select exists(
-                     select 1 from public.content_assets ca
-                     join public.approval_requests ar
+                     select 1 from bighead.content_assets ca
+                     join bighead.approval_requests ar
                        on ar.organization_id=ca.organization_id
                        and ar.id=ca.approval_request_id and ar.task_id=ca.task_id
-                     join public.approval_decisions ad
+                     join bighead.approval_decisions ad
                        on ad.organization_id=ar.organization_id
                       and ad.approval_request_id=ar.id
                     where ca.organization_id=$2 and ca.id=$1 and ca.task_id is not null
@@ -1580,7 +1580,7 @@ class PostgresCommercialRepository:
                 json.dumps(preserved),
             )
             await conn.execute(
-                "update public.content_assets set status='scheduled',channel=$3 where id=$1 and organization_id=$2",
+                "update bighead.content_assets set status='scheduled',channel=$3 where id=$1 and organization_id=$2",
                 asset_id,
                 organization_id,
                 payload.channel,
@@ -1610,7 +1610,7 @@ class PostgresCommercialRepository:
         allowed_roles: set[str] | None,
     ) -> str:
         role = await conn.fetchval(
-            """select role::text from public.organization_members
+            """select role::text from bighead.organization_members
                 where organization_id=$1 and user_id=$2 and status='active'
                 for key share""",
             organization_id,
@@ -1635,7 +1635,7 @@ class PostgresCommercialRepository:
     ) -> UUID:
         event_id = uuid4()
         await conn.execute(
-            """insert into public.event_outbox(id,organization_id,event_type,aggregate_type,aggregate_id,payload)
+            """insert into bighead.event_outbox(id,organization_id,event_type,aggregate_type,aggregate_id,payload)
           values($1,$2,$3,$4,$5,$6::jsonb)""",
             event_id,
             organization_id,

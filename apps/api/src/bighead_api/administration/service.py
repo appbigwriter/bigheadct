@@ -153,7 +153,7 @@ class PostgresAdministrationRepository:
             rows = await conn.fetch(
                 """select id,campaign_id,name,hypothesis,status::text,primary_metric,
                           allocation,stop_rule,starts_at,ends_at,result,created_at,updated_at
-                     from public.experiments where organization_id=$1
+                     from bighead.experiments where organization_id=$1
                      order by updated_at desc limit 100""",
                 organization_id,
             )
@@ -167,13 +167,13 @@ class PostgresAdministrationRepository:
     ) -> dict[str, Any]:
         async with self.database.authenticated(user_id, organization_id) as conn:
             experiment = await conn.fetchrow(
-                "select * from public.experiments where id=$1 and organization_id=$2",
+                "select * from bighead.experiments where id=$1 and organization_id=$2",
                 experiment_id,
                 organization_id,
             )
             variants = await conn.fetch(
                 """select id,name,content_asset_id,weight,configuration,created_at
-                     from public.experiment_variants where experiment_id=$1 and organization_id=$2
+                     from bighead.experiment_variants where experiment_id=$1 and organization_id=$2
                      order by name""",
                 experiment_id,
                 organization_id,
@@ -198,7 +198,7 @@ class PostgresAdministrationRepository:
         async with self.database.privileged() as conn:
             async with conn.transaction():
                 current = await conn.fetchrow(
-                    """select e.* from public.experiments e join public.organization_members m
+                    """select e.* from bighead.experiments e join bighead.organization_members m
                           on m.organization_id=e.organization_id and m.user_id=$3
                          and m.status='active' and m.role in ('owner','admin','analyst')
                         where e.id=$1 and e.organization_id=$2 for update of e""",
@@ -219,7 +219,7 @@ class PostgresAdministrationRepository:
                 starts_at = payload.window.get("start") if payload.window else None
                 ends_at = payload.window.get("end") if payload.window else None
                 row = await conn.fetchrow(
-                    """update public.experiments set hypothesis=coalesce($3,hypothesis),
+                    """update bighead.experiments set hypothesis=coalesce($3,hypothesis),
                               stop_rule=coalesce($4::jsonb,stop_rule),
                               starts_at=coalesce($5,starts_at),ends_at=coalesce($6,ends_at)
                         where id=$1 and organization_id=$2 returning *""",
@@ -235,12 +235,12 @@ class PostgresAdministrationRepository:
                     if abs(total - 1.0) > 0.00001:
                         raise HTTPException(status_code=422, detail="Variant weights must total 1")
                     await conn.execute(
-                        "delete from public.experiment_variants where experiment_id=$1",
+                        "delete from bighead.experiment_variants where experiment_id=$1",
                         experiment_id,
                     )
                     for variant in payload.variants:
                         await conn.execute(
-                            """insert into public.experiment_variants(
+                            """insert into bighead.experiment_variants(
                                    organization_id,experiment_id,name,content_asset_id,weight,configuration)
                                values($1,$2,$3,$4,$5,$6::jsonb)""",
                             organization_id,
@@ -270,8 +270,8 @@ class PostgresAdministrationRepository:
         replayed = False
         async with self.database.privileged() as conn:
             current = await conn.fetchrow(
-                """select experiment.* from public.experiments as experiment
-                    join public.organization_members as member
+                """select experiment.* from bighead.experiments as experiment
+                    join bighead.organization_members as member
                       on member.organization_id=experiment.organization_id
                      and member.user_id=$3 and member.status='active'
                      and member.role in ('owner','admin','analyst')
@@ -291,12 +291,12 @@ class PostgresAdministrationRepository:
                 raise HTTPException(status_code=409, detail="Experiment version conflict")
             else:
                 variant_count = await conn.fetchval(
-                    "select count(*) from public.experiment_variants where experiment_id=$1",
+                    "select count(*) from bighead.experiment_variants where experiment_id=$1",
                     experiment_id,
                 )
                 total_weight = await conn.fetchval(
                     """select coalesce(sum(weight),0)
-                         from public.experiment_variants where experiment_id=$1""",
+                         from bighead.experiment_variants where experiment_id=$1""",
                     experiment_id,
                 )
                 if variant_count < 2 or abs(float(total_weight) - 1.0) > 0.00001:
@@ -305,7 +305,7 @@ class PostgresAdministrationRepository:
                         detail="Experiment requires at least two variants totaling weight 1",
                     )
                 await conn.execute(
-                    """update public.experiments
+                    """update bighead.experiments
                           set status='running',starts_at=coalesce(starts_at,now())
                         where id=$1 and organization_id=$2""",
                     experiment_id,
@@ -335,7 +335,7 @@ class PostgresAdministrationRepository:
         _validate_period(start, end)
         async with self.database.authenticated(user_id, organization_id) as conn:
             organization = await conn.fetchrow(
-                "select timezone,settings from public.organizations where id=$1",
+                "select timezone,settings from bighead.organizations where id=$1",
                 organization_id,
             )
             if not organization:
@@ -353,7 +353,7 @@ class PostgresAdministrationRepository:
                 rows = await conn.fetch(
                     """select status::text key,count(*)::bigint value,
                               (array_agg(id order by created_at desc))[1:100] record_ids
-                         from public.tasks where organization_id=$1
+                         from bighead.tasks where organization_id=$1
                           and created_at >= $2 and created_at < $3
                          group by status order by status""",
                     organization_id,
@@ -406,7 +406,7 @@ class PostgresAdministrationRepository:
                               count(*) filter(
                                 where sla_at<$3 and status not in ('done','canceled')
                               ) breaches
-                         from public.tasks where organization_id=$1
+                         from bighead.tasks where organization_id=$1
                            and created_at >= $2 and created_at < $3
                            and (cardinality($4::uuid[])=0 or assignee_id=any($4::uuid[]))
                          group by status order by status""",
@@ -425,7 +425,7 @@ class PostgresAdministrationRepository:
                         """select status::text,count(*)::bigint count,
                                   count(*) filter(where sla_at<$3
                                     and status not in ('done','canceled'))::bigint breaches
-                             from public.tasks where organization_id=$1
+                             from bighead.tasks where organization_id=$1
                                and created_at >= $2 and created_at < $3
                                and (cardinality($4::uuid[])=0
                                  or assignee_id=any($4::uuid[]))
@@ -464,7 +464,7 @@ class PostgresAdministrationRepository:
                     """with task_model_cost as (
                            select t.id,t.agent_id,t.status,c.model_id,
                                   coalesce(sum(c.amount),0) cost
-                             from public.tasks t left join public.cost_events c
+                             from bighead.tasks t left join bighead.cost_events c
                                on c.organization_id=t.organization_id and c.task_id=t.id
                               and c.occurred_at >= $2 and c.occurred_at < $3
                             where t.organization_id=$1
@@ -475,11 +475,11 @@ class PostgresAdministrationRepository:
                                 count(tc.id)::bigint tasks,
                                 count(tc.id) filter(where tc.status='failed')::bigint failures,
                                 coalesce(sum(tc.cost),0) cost
-                           from public.agents a
+                           from bighead.agents a
                            left join task_model_cost tc on tc.agent_id=a.id
-                           left join public.models m on m.organization_id=a.organization_id
+                           left join bighead.models m on m.organization_id=a.organization_id
                              and m.id=tc.model_id
-                           left join public.model_providers p
+                           left join bighead.model_providers p
                              on p.organization_id=m.organization_id and p.id=m.provider_id
                           where a.organization_id=$1
                             and ($4::text is null or p.provider_key=$4)
@@ -497,8 +497,8 @@ class PostgresAdministrationRepository:
                                 where tool_call.status='failed'
                               )::bigint failures,
                               coalesce(avg(tool_call.latency_ms),0)::numeric average_latency_ms
-                         from public.skills skill
-                         left join public.tool_calls tool_call
+                         from bighead.skills skill
+                         left join bighead.tool_calls tool_call
                            on tool_call.organization_id=skill.organization_id
                           and tool_call.skill_id=skill.id
                           and tool_call.created_at >= $2 and tool_call.created_at < $3
@@ -544,14 +544,14 @@ class PostgresAdministrationRepository:
                                 end dimension,sum(c.amount) total,
                                 sum(c.input_tokens)::bigint input_tokens,
                                 sum(c.output_tokens)::bigint output_tokens
-                           from public.cost_events c
-                           left join public.models m on m.organization_id=c.organization_id
+                           from bighead.cost_events c
+                           left join bighead.models m on m.organization_id=c.organization_id
                              and m.id=c.model_id
-                           left join public.model_providers p
+                           left join bighead.model_providers p
                              on p.organization_id=m.organization_id and p.id=m.provider_id
-                           left join public.tasks t on t.organization_id=c.organization_id
+                           left join bighead.tasks t on t.organization_id=c.organization_id
                              and t.id=c.task_id
-                           left join public.agents a on a.organization_id=t.organization_id
+                           left join bighead.agents a on a.organization_id=t.organization_id
                              and a.id=t.agent_id
                           where c.organization_id=$1
                             and c.occurred_at >= $2 and c.occurred_at < $3
@@ -587,7 +587,7 @@ class PostgresAdministrationRepository:
                 campaign_ids = cast(list[UUID], filters.get("campaign_ids") or [])
                 rows = await conn.fetch(
                     """select event_name,count(*)::bigint count
-                         from public.analytics_events
+                         from bighead.analytics_events
                          where organization_id=$1 and occurred_at >= $2 and occurred_at < $3
                            and (cardinality($4::uuid[])=0 or campaign_id=any($4::uuid[]))
                          group by event_name order by count desc""",
@@ -602,7 +602,7 @@ class PostgresAdministrationRepository:
                                  then (properties->>'attributedRevenue')::numeric
                                  else 0 end),0) revenue,
                               count(*) filter(where campaign_id is null)::bigint unknown_sources
-                         from public.analytics_events
+                         from bighead.analytics_events
                         where organization_id=$1 and occurred_at >= $2 and occurred_at < $3
                           and (cardinality($4::uuid[])=0 or campaign_id=any($4::uuid[]))""",
                     organization_id,
@@ -641,8 +641,8 @@ class PostgresAdministrationRepository:
         cursor_at, cursor_id = _decode_record_cursor(cursor)
         async with self.database.authenticated(user_id, organization_id) as conn:
             total = await conn.fetchval(
-                """select count(*) from public.tasks
-                     where organization_id=$1 and status=$2::public.task_status
+                """select count(*) from bighead.tasks
+                     where organization_id=$1 and status=$2::bighead.task_status
                        and created_at >= $3 and created_at < $4""",
                 organization_id,
                 dimension,
@@ -650,8 +650,8 @@ class PostgresAdministrationRepository:
                 end,
             )
             rows = await conn.fetch(
-                """select id,status::text,created_at from public.tasks
-                     where organization_id=$1 and status=$2::public.task_status
+                """select id,status::text,created_at from bighead.tasks
+                     where organization_id=$1 and status=$2::bighead.task_status
                        and created_at >= $3 and created_at < $4
                        and ($5::timestamptz is null or (created_at,id) < ($5,$6::uuid))
                      order by created_at desc,id desc limit $7""",
@@ -680,7 +680,7 @@ class PostgresAdministrationRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             row = await conn.fetchrow(
                 """select id,name,slug,timezone,locale,settings,created_at,updated_at
-                     from public.organizations where id=$1""",
+                     from bighead.organizations where id=$1""",
                 organization_id,
             )
         if not row:
@@ -708,8 +708,8 @@ class PostgresAdministrationRepository:
                     if not timezone_exists:
                         raise HTTPException(status_code=422, detail="Invalid IANA timezone")
                 current = await conn.fetchrow(
-                    """select o.settings,o.updated_at from public.organizations o
-                         join public.organization_members m on m.organization_id=o.id
+                    """select o.settings,o.updated_at from bighead.organizations o
+                         join bighead.organization_members m on m.organization_id=o.id
                           and m.user_id=$2 and m.status='active' and m.role in ('owner','admin')
                         where o.id=$1 for update of o""",
                     organization_id,
@@ -728,7 +728,7 @@ class PostgresAdministrationRepository:
                     if value is not None:
                         settings[key] = value
                 await conn.execute(
-                    """update public.organizations
+                    """update bighead.organizations
                           set timezone=coalesce($2,timezone),settings=$3::jsonb
                         where id=$1""",
                     organization_id,
@@ -751,7 +751,7 @@ class PostgresAdministrationRepository:
                 """select id,organization_id,name,slug,business_type,template_key,
                           schema_name,domain,language,status,template_version,
                           description,created_at,updated_at
-                     from public.projects
+                     from bighead.projects
                     where organization_id=$1
                     order by created_at desc,id desc""",
                 organization_id,
@@ -773,7 +773,7 @@ class PostgresAdministrationRepository:
     ) -> dict[str, Any]:
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members
+                """select exists(select 1 from bighead.organization_members
                      where organization_id=$1 and user_id=$2 and status='active'
                        and role in ('owner','admin'))""",
                 organization_id,
@@ -782,7 +782,7 @@ class PostgresAdministrationRepository:
             if not allowed:
                 raise HTTPException(status_code=403, detail="Administrator role required")
             row = await conn.fetchrow(
-                """select public.provision_project($1,$2,$3,$4,$5,$6,$7) project_id""",
+                """select bighead.provision_project($1,$2,$3,$4,$5,$6,$7) project_id""",
                 payload.name,
                 payload.slug,
                 payload.business_type,
@@ -797,13 +797,13 @@ class PostgresAdministrationRepository:
                 """select id,organization_id,name,slug,business_type,template_key,
                           schema_name,domain,language,status,template_version,
                           description,created_at,updated_at
-                     from public.projects where id=$1 and organization_id=$2""",
+                     from bighead.projects where id=$1 and organization_id=$2""",
                 row["project_id"],
                 organization_id,
             )
             if payload.description is not None:
                 await conn.execute(
-                    "update public.projects set description=$3 where id=$1 and organization_id=$2",
+                    "update bighead.projects set description=$3 where id=$1 and organization_id=$2",
                     row["project_id"],
                     organization_id,
                     payload.description,
@@ -812,7 +812,7 @@ class PostgresAdministrationRepository:
                     """select id,organization_id,name,slug,business_type,template_key,
                               schema_name,domain,language,status,template_version,
                               description,created_at,updated_at
-                         from public.projects where id=$1 and organization_id=$2""",
+                         from bighead.projects where id=$1 and organization_id=$2""",
                     row["project_id"],
                     organization_id,
                 )
@@ -827,7 +827,7 @@ class PostgresAdministrationRepository:
     ) -> dict[str, Any]:
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members
+                """select exists(select 1 from bighead.organization_members
                      where organization_id=$1 and user_id=$2 and status='active'
                        and role in ('owner','admin'))""",
                 organization_id,
@@ -836,7 +836,7 @@ class PostgresAdministrationRepository:
             if not allowed:
                 raise HTTPException(status_code=403, detail="Administrator role required")
             row = await conn.fetchrow(
-                """update public.projects
+                """update bighead.projects
                       set name=coalesce($3,name),
                           domain=coalesce($4,domain),
                           language=coalesce($5,language),
@@ -874,11 +874,11 @@ class PostgresAdministrationRepository:
                 """select t.id,t.name,t.slug,t.description,t.status::text,t.created_at,t.updated_at,
                           coalesce(array_agg(distinct to_org.organization_id) filter (where to_org.organization_id is not null), '{}'::uuid[]) organization_ids,
                           coalesce(array_agg(distinct to_project.project_id) filter (where to_project.project_id is not null), '{}'::uuid[]) project_ids
-                     from public.teams t
-                     left join public.team_organizations to_org on to_org.team_id=t.id
-                     left join public.team_projects to_project on to_project.team_id=t.id
+                     from bighead.teams t
+                     left join bighead.team_organizations to_org on to_org.team_id=t.id
+                     left join bighead.team_projects to_project on to_project.team_id=t.id
                     where exists(
-                      select 1 from public.team_organizations scoped
+                      select 1 from bighead.team_organizations scoped
                        where scoped.team_id=t.id and scoped.organization_id=$1
                     )
                     group by t.id
@@ -887,7 +887,7 @@ class PostgresAdministrationRepository:
             )
             participant_rows = await conn.fetch(
                 """select team_id,participant_kind::text,participant_id,display_name,email
-                     from public.team_members
+                     from bighead.team_members
                     where team_id = any($1::uuid[])""",
                 [row["id"] for row in rows],
             )
@@ -915,7 +915,7 @@ class PostgresAdministrationRepository:
     ) -> dict[str, Any]:
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members
+                """select exists(select 1 from bighead.organization_members
                      where organization_id=$1 and user_id=$2 and status='active'
                        and role in ('owner','admin'))""",
                 organization_id,
@@ -924,7 +924,7 @@ class PostgresAdministrationRepository:
             if not allowed:
                 raise HTTPException(status_code=403, detail="Administrator role required")
             team_id = await conn.fetchval(
-                """insert into public.teams(name,slug,description,created_by)
+                """insert into bighead.teams(name,slug,description,created_by)
                      values($1,$2,$3,$4) returning id""",
                 payload.name,
                 payload.slug,
@@ -933,21 +933,21 @@ class PostgresAdministrationRepository:
             )
             for org_id in dict.fromkeys([organization_id, *payload.organization_ids]):
                 await conn.execute(
-                    """insert into public.team_organizations(team_id,organization_id)
+                    """insert into bighead.team_organizations(team_id,organization_id)
                          values($1,$2) on conflict do nothing""",
                     team_id,
                     org_id,
                 )
             for project_id in dict.fromkeys(payload.project_ids):
                 await conn.execute(
-                    """insert into public.team_projects(team_id,project_id)
+                    """insert into bighead.team_projects(team_id,project_id)
                          values($1,$2) on conflict do nothing""",
                     team_id,
                     project_id,
                 )
             for participant in payload.participants:
                 await conn.execute(
-                    """insert into public.team_members(
+                    """insert into bighead.team_members(
                            team_id,participant_kind,participant_id,display_name,email
                          ) values($1,$2,$3,$4,$5) on conflict do nothing""",
                     team_id,
@@ -967,7 +967,7 @@ class PostgresAdministrationRepository:
     ) -> dict[str, Any]:
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members
+                """select exists(select 1 from bighead.organization_members
                      where organization_id=$1 and user_id=$2 and status='active'
                        and role in ('owner','admin'))""",
                 organization_id,
@@ -976,7 +976,7 @@ class PostgresAdministrationRepository:
             if not allowed:
                 raise HTTPException(status_code=403, detail="Administrator role required")
             row = await conn.fetchrow(
-                """update public.teams
+                """update bighead.teams
                       set name=coalesce($3,name),
                           slug=coalesce($4,slug),
                           description=coalesce($5,description),
@@ -994,28 +994,28 @@ class PostgresAdministrationRepository:
             if not row:
                 raise HTTPException(status_code=404, detail="Team not found")
             if payload.organization_ids is not None:
-                await conn.execute("delete from public.team_organizations where team_id=$1", team_id)
+                await conn.execute("delete from bighead.team_organizations where team_id=$1", team_id)
                 for org_id in dict.fromkeys([organization_id, *payload.organization_ids]):
                     await conn.execute(
-                        """insert into public.team_organizations(team_id,organization_id)
+                        """insert into bighead.team_organizations(team_id,organization_id)
                              values($1,$2) on conflict do nothing""",
                         team_id,
                         org_id,
                     )
             if payload.project_ids is not None:
-                await conn.execute("delete from public.team_projects where team_id=$1", team_id)
+                await conn.execute("delete from bighead.team_projects where team_id=$1", team_id)
                 for project_id in dict.fromkeys(payload.project_ids):
                     await conn.execute(
-                        """insert into public.team_projects(team_id,project_id)
+                        """insert into bighead.team_projects(team_id,project_id)
                              values($1,$2) on conflict do nothing""",
                         team_id,
                         project_id,
                     )
             if payload.participants is not None:
-                await conn.execute("delete from public.team_members where team_id=$1", team_id)
+                await conn.execute("delete from bighead.team_members where team_id=$1", team_id)
                 for participant in payload.participants:
                     await conn.execute(
-                        """insert into public.team_members(
+                        """insert into bighead.team_members(
                                team_id,participant_kind,participant_id,display_name,email
                              ) values($1,$2,$3,$4,$5) on conflict do nothing""",
                         team_id,
@@ -1042,7 +1042,7 @@ class PostgresAdministrationRepository:
     ) -> dict[str, Any]:
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members where
+                """select exists(select 1 from bighead.organization_members where
                      organization_id=$1 and user_id=$2 and status='active'
                      and role in ('owner','admin'))""",
                 organization_id,
@@ -1053,7 +1053,7 @@ class PostgresAdministrationRepository:
             providers = await conn.fetch(
                 """select id,name,provider_key,is_enabled,settings,created_at,updated_at,
                           (secret_reference is not null) secret_configured
-                     from public.model_providers where organization_id=$1
+                     from bighead.model_providers where organization_id=$1
                        and ($2::text is null or provider_key=$2)
                        and ($3::text='all'
                          or ($3='enabled' and is_enabled)
@@ -1066,7 +1066,7 @@ class PostgresAdministrationRepository:
             webhooks = await conn.fetch(
                 """select id,url,event_types,is_enabled,created_at,updated_at,
                           true secret_configured
-                     from public.webhook_endpoints w where organization_id=$1
+                     from bighead.webhook_endpoints w where organization_id=$1
                        and ($2::text is null or $2='webhook')
                        and ($3::text='all'
                          or ($3='enabled' and is_enabled)
@@ -1095,7 +1095,7 @@ class PostgresAdministrationRepository:
                           (d.last_error is not null) has_error,
                           d.response_status,d.status
                      from private.webhook_deliveries d
-                     join public.event_outbox e on e.id=d.event_id
+                     join bighead.event_outbox e on e.id=d.event_id
                     where d.organization_id=$1
                     order by d.created_at desc,d.id limit 100""",
                 organization_id,
@@ -1137,7 +1137,7 @@ class PostgresAdministrationRepository:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members where
+                """select exists(select 1 from bighead.organization_members where
                      organization_id=$1 and user_id=$2 and status='active'
                      and role in ('owner','admin'))""",
                 organization_id,
@@ -1148,7 +1148,7 @@ class PostgresAdministrationRepository:
             rows = await conn.fetch(
                 """select id,actor_user_id,actor_type,action,resource_type,resource_id,
                           risk_level::text,trace_id,changes_redacted,created_at
-                     from public.audit_log where organization_id=$1
+                     from bighead.audit_log where organization_id=$1
                       and ($2::text is null or resource_type=$2)
                       and ($3::uuid is null or actor_user_id=$3)
                       and ($4::timestamptz is null
@@ -1231,7 +1231,7 @@ class PostgresAdministrationRepository:
                         )
                     return {"request": dict(existing), "replayed": True}
                 subject_exists = await conn.fetchval(
-                    """select exists(select 1 from public.organization_members
+                    """select exists(select 1 from bighead.organization_members
                         where organization_id=$1 and user_id=$2)""",
                     organization_id,
                     payload.subject_user_id,
@@ -1305,7 +1305,7 @@ class PostgresAdministrationRepository:
             async with conn.transaction():
                 await _require_admin(conn, user_id, organization_id)
                 subject_exists = await conn.fetchval(
-                    """select exists(select 1 from public.organization_members
+                    """select exists(select 1 from bighead.organization_members
                         where organization_id=$1 and user_id=$2)""",
                     organization_id,
                     payload.subject_user_id,
@@ -1364,7 +1364,7 @@ class PostgresAdministrationRepository:
 
 async def _require_admin(conn: Any, user_id: UUID, organization_id: UUID) -> None:
     allowed = await conn.fetchval(
-        """select exists(select 1 from public.organization_members where
+        """select exists(select 1 from bighead.organization_members where
              organization_id=$1 and user_id=$2 and status='active'
              and role in ('owner','admin'))""",
         organization_id,
@@ -1546,13 +1546,13 @@ async def _analytics_freshness(
     conn: asyncpg.Connection[Any], view: AnalyticsView, organization_id: UUID
 ) -> datetime | None:
     queries = {
-        "summary": "select max(updated_at) from public.tasks where organization_id=$1",
-        "operations": "select max(updated_at) from public.tasks where organization_id=$1",
+        "summary": "select max(updated_at) from bighead.tasks where organization_id=$1",
+        "operations": "select max(updated_at) from bighead.tasks where organization_id=$1",
         "agents": """select greatest(
-          (select max(updated_at) from public.tasks where organization_id=$1),
-          (select max(occurred_at) from public.cost_events where organization_id=$1))""",
-        "costs": "select max(occurred_at) from public.cost_events where organization_id=$1",
-        "funnel": "select max(received_at) from public.analytics_events where organization_id=$1",
+          (select max(updated_at) from bighead.tasks where organization_id=$1),
+          (select max(occurred_at) from bighead.cost_events where organization_id=$1))""",
+        "costs": "select max(occurred_at) from bighead.cost_events where organization_id=$1",
+        "funnel": "select max(received_at) from bighead.analytics_events where organization_id=$1",
     }
     return cast(datetime | None, await conn.fetchval(queries[view], organization_id))
 
@@ -1628,7 +1628,7 @@ async def _emit(
     payload: dict[str, Any],
 ) -> None:
     await conn.execute(
-        """insert into public.event_outbox(
+        """insert into bighead.event_outbox(
                organization_id,event_type,aggregate_type,aggregate_id,payload)
            values($1,$2,$3,$4,$5::jsonb)""",
         organization_id,

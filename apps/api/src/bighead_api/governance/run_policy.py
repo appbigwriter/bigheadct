@@ -36,7 +36,7 @@ async def resolve_run_policy(
 ) -> ResolvedRunPolicy:
     """Snapshot the strictest policy of skills referenced by a workflow version."""
     workflow = await conn.fetchrow(
-        """select definition from public.workflow_versions
+        """select definition from bighead.workflow_versions
              where id=$1 and organization_id=$2""",
         workflow_version_id,
         organization_id,
@@ -86,7 +86,7 @@ async def resolve_run_policy(
 
     rows = await conn.fetch(
         """select id,slug,timeout_seconds,max_retries,is_enabled,updated_at
-             from public.skills
+             from bighead.skills
             where organization_id=$1 and id=any($2::uuid[])
             order by id""",
         organization_id,

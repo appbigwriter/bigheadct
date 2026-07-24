@@ -145,7 +145,7 @@ class PostgresGovernanceRepository:
             rows = await conn.fetch(
                 """select ar.id,ar.task_id,ar.artifact_id,ar.assigned_to,ar.status::text,
                           ar.risk_level::text,ar.round,ar.due_at,ar.created_at,t.title
-                     from public.approval_requests ar join public.tasks t on t.id=ar.task_id
+                     from bighead.approval_requests ar join bighead.tasks t on t.id=ar.task_id
                     where ar.organization_id=$1
                       and ($2='all'
                         or ($2='pending' and ar.status='pending'
@@ -169,7 +169,7 @@ class PostgresGovernanceRepository:
                   count(*) filter(where status='pending' and due_at<now())::int overdue,
                   count(*) filter(where status in
                     ('approved','changes_requested','rejected','expired'))::int decided
-                from public.approval_requests where organization_id=$1""",
+                from bighead.approval_requests where organization_id=$1""",
                 organization_id,
             )
         items = [dict(row) for row in rows]
@@ -189,11 +189,11 @@ class PostgresGovernanceRepository:
                           m.role::text as actor_role,
                           coalesce((o.settings->'approval_policy'->>'segregation')::boolean,true)
                             as segregation
-                     from public.approval_requests ar
-                     join public.tasks t
+                     from bighead.approval_requests ar
+                     join bighead.tasks t
                        on t.organization_id=ar.organization_id and t.id=ar.task_id
-                     join public.organizations o on o.id=ar.organization_id
-                     join public.organization_members m
+                     join bighead.organizations o on o.id=ar.organization_id
+                     join bighead.organization_members m
                        on m.organization_id=ar.organization_id and m.user_id=$3
                       and m.status='active'
                     where ar.id=$1 and ar.organization_id=$2""",
@@ -208,7 +208,7 @@ class PostgresGovernanceRepository:
             if row["artifact_id"] is not None:
                 artifact_row = await conn.fetchrow(
                     """select id,name,kind,mime_type,size_bytes,checksum_sha256,metadata,created_at
-                         from public.artifacts
+                         from bighead.artifacts
                         where id=$1 and organization_id=$2""",
                     row["artifact_id"],
                     organization_id,
@@ -217,7 +217,7 @@ class PostgresGovernanceRepository:
 
             evaluation_rows = await conn.fetch(
                 """select e.id,e.score,e.passed,e.results,e.created_at,e.scorecard_id
-                     from public.qa_evaluations e
+                     from bighead.qa_evaluations e
                     where e.organization_id=$1 and e.task_id=$2
                       and ($3::uuid is null or e.artifact_id=$3)
                     order by e.created_at desc""",
@@ -226,14 +226,14 @@ class PostgresGovernanceRepository:
                 row["artifact_id"],
             )
             run_count = await conn.fetchval(
-                """select count(*) from public.runs
+                """select count(*) from bighead.runs
                     where organization_id=$1 and task_id=$2
                       and status in ('queued','running','waiting')""",
                 organization_id,
                 row["task_id"],
             )
             costs = await conn.fetch(
-                """select currency,sum(amount) as amount from public.cost_events
+                """select currency,sum(amount) as amount from bighead.cost_events
                     where organization_id=$1 and task_id=$2
                     group by currency order by currency""",
                 organization_id,
@@ -306,7 +306,7 @@ class PostgresGovernanceRepository:
     ) -> ApprovalDecisionHistoryResponse:
         async with self.database.authenticated(user_id, organization_id) as conn:
             exists = await conn.fetchval(
-                """select exists(select 1 from public.approval_requests
+                """select exists(select 1 from bighead.approval_requests
                     where id=$1 and organization_id=$2)""",
                 approval_id,
                 organization_id,
@@ -315,7 +315,7 @@ class PostgresGovernanceRepository:
                 raise HTTPException(status_code=404, detail="Approval not found")
             rows = await conn.fetch(
                 """select id,decision::text,decided_by,external_reviewer_name,comment,created_at
-                     from public.approval_decisions
+                     from bighead.approval_decisions
                     where approval_request_id=$1 and organization_id=$2
                     order by created_at desc,id desc""",
                 approval_id,
@@ -352,9 +352,9 @@ class PostgresGovernanceRepository:
                               m.role::text,m.status::text as member_status,
                               coalesce((o.settings->'approval_policy'->>'segregation')::boolean,true)
                                 as segregation
-                         from public.approval_requests ar
-                         join public.organizations o on o.id=ar.organization_id
-                         left join public.organization_members m
+                         from bighead.approval_requests ar
+                         join bighead.organizations o on o.id=ar.organization_id
+                         left join bighead.organization_members m
                            on m.organization_id=ar.organization_id and m.user_id=$3
                         where ar.id=$1 and ar.organization_id=$2
                         for update of ar""",
@@ -381,7 +381,7 @@ class PostgresGovernanceRepository:
                         status_code=409, detail="Approval already decided or round changed"
                     )
                 row = await conn.fetchrow(
-                    """insert into public.approval_decisions(
+                    """insert into bighead.approval_decisions(
                            organization_id,approval_request_id,decision,decided_by,comment)
                        values($2,$1,$4,$3,$5)
                        on conflict (approval_request_id) do nothing
@@ -397,7 +397,7 @@ class PostgresGovernanceRepository:
                         status_code=409, detail="Approval already decided or round changed"
                     )
                 approval = await conn.fetchrow(
-                    """update public.approval_requests
+                    """update bighead.approval_requests
                           set status=$3,decided_at=now()
                         where id=$1 and organization_id=$2 and status='pending' and round=$4
                     returning id,task_id,artifact_id,status::text,risk_level::text,
@@ -413,7 +413,7 @@ class PostgresGovernanceRepository:
                     conn, organization_id, approval["task_id"], payload.decision
                 )
                 await conn.execute(
-                    """insert into public.audit_log(
+                    """insert into bighead.audit_log(
                            organization_id,actor_user_id,actor_type,action,resource_type,
                            resource_id,risk_level,changes_redacted)
                        values($1,$2,'user','approval.decided','approval',$3,$4,$5::jsonb)""",
@@ -441,7 +441,7 @@ class PostgresGovernanceRepository:
     ) -> dict[str, Any]:
         async with self.database.authenticated(user_id, organization_id) as conn:
             approval = await conn.fetchrow(
-                """select task_id,artifact_id from public.approval_requests
+                """select task_id,artifact_id from bighead.approval_requests
                     where id=$1 and organization_id=$2""",
                 approval_id,
                 organization_id,
@@ -451,7 +451,7 @@ class PostgresGovernanceRepository:
             rows = await conn.fetch(
                 """select e.id,e.score,e.passed,e.results,e.created_at,s.name,s.version,s.criteria,
                           s.pass_threshold
-                     from public.qa_evaluations e join public.qa_scorecards s on s.id=e.scorecard_id
+                     from bighead.qa_evaluations e join bighead.qa_scorecards s on s.id=e.scorecard_id
                     where e.organization_id=$1 and e.task_id=$2
                       and ($3::uuid is null or e.artifact_id=$3) order by e.created_at desc""",
                 organization_id,
@@ -463,7 +463,7 @@ class PostgresGovernanceRepository:
     async def get_policy(self, user_id: UUID, organization_id: UUID) -> ApprovalPolicyResponse:
         async with self.database.authenticated(user_id, organization_id) as conn:
             settings = await conn.fetchval(
-                "select settings from public.organizations where id=$1", organization_id
+                "select settings from bighead.organizations where id=$1", organization_id
             )
         if settings is None:
             raise HTTPException(status_code=404, detail="Organization not found")
@@ -481,10 +481,10 @@ class PostgresGovernanceRepository:
         }
         async with self.database.privileged() as conn:
             row = await conn.fetchrow(
-                """update public.organizations
+                """update bighead.organizations
                       set settings=jsonb_set(settings,'{approval_policy}',$3::jsonb,true)
                     where id=$1 and coalesce((settings->'approval_policy'->>'version')::int,0)=$2
-                      and exists(select 1 from public.organization_members m
+                      and exists(select 1 from bighead.organization_members m
                         where m.organization_id=$1 and m.user_id=$4 and m.status='active'
                           and m.role in ('owner','admin'))
                     returning settings->'approval_policy' as policy""",
@@ -513,10 +513,10 @@ class PostgresGovernanceRepository:
                 row = await conn.fetchrow(
                     """select l.organization_id,l.approval_request_id,ar.status::text,
                               ar.risk_level::text,ar.round,t.title,t.objective,l.expires_at
-                         from public.external_approval_links l
-                         join public.approval_requests ar on ar.id=l.approval_request_id
+                         from bighead.external_approval_links l
+                         join bighead.approval_requests ar on ar.id=l.approval_request_id
                            and ar.organization_id=l.organization_id
-                         join public.tasks t on t.id=ar.task_id
+                         join bighead.tasks t on t.id=ar.task_id
                           and t.organization_id=l.organization_id
                         where l.token_hash=$1 and l.revoked_at is null and l.expires_at>now()
                           and l.use_count<l.max_uses""",
@@ -555,8 +555,8 @@ class PostgresGovernanceRepository:
                 link = await conn.fetchrow(
                     """select l.id,l.organization_id,l.approval_request_id,l.use_count,l.max_uses,
                               ar.task_id,ar.round,ar.status::text
-                         from public.external_approval_links l
-                         join public.approval_requests ar on ar.id=l.approval_request_id
+                         from bighead.external_approval_links l
+                         join bighead.approval_requests ar on ar.id=l.approval_request_id
                           and ar.organization_id=l.organization_id
                         where l.token_hash=$1 and l.revoked_at is null and l.expires_at>now()
                         for update of l,ar""",
@@ -569,8 +569,8 @@ class PostgresGovernanceRepository:
                 replay = await conn.fetchrow(
                     """select ar.id,ar.task_id,ar.status::text,ar.risk_level::text,
                               ar.round,ar.decided_at,ad.decision::text,ad.comment
-                         from public.approval_decisions ad
-                         join public.approval_requests ar on ar.id=ad.approval_request_id
+                         from bighead.approval_decisions ad
+                         join bighead.approval_requests ar on ar.id=ad.approval_request_id
                           and ar.organization_id=ad.organization_id
                         where ad.organization_id=$1 and ad.approval_request_id=$2
                           and ad.idempotency_key=$3""",
@@ -603,7 +603,7 @@ class PostgresGovernanceRepository:
                         status_code=410, detail="Portal token expired or unavailable"
                     )
                 task_waiting = await conn.fetchval(
-                    """select status='waiting_human' from public.tasks
+                    """select status='waiting_human' from bighead.tasks
                         where id=$1 and organization_id=$2 for update""",
                     link["task_id"],
                     link["organization_id"],
@@ -611,7 +611,7 @@ class PostgresGovernanceRepository:
                 if task_waiting is not True:
                     raise HTTPException(status_code=409, detail="Task is not awaiting approval")
                 decision = await conn.fetchrow(
-                    """insert into public.approval_decisions(
+                    """insert into bighead.approval_decisions(
                            organization_id,approval_request_id,decision,external_reviewer_name,
                            comment,idempotency_key)
                        values($1,$2,$3,'external portal',$4,$5)
@@ -625,7 +625,7 @@ class PostgresGovernanceRepository:
                 if not decision:
                     raise HTTPException(status_code=409, detail="Approval already decided")
                 approval = await conn.fetchrow(
-                    """update public.approval_requests set status=$3,decided_at=now()
+                    """update bighead.approval_requests set status=$3,decided_at=now()
                         where id=$1 and organization_id=$2 and status='pending'
                         returning id,task_id,artifact_id,status::text,risk_level::text,
                                   round,decided_at""",
@@ -634,7 +634,7 @@ class PostgresGovernanceRepository:
                     payload.decision,
                 )
                 await conn.execute(
-                    "update public.external_approval_links set use_count=use_count+1 where id=$1",
+                    "update bighead.external_approval_links set use_count=use_count+1 where id=$1",
                     link["id"],
                 )
                 await self._continue_waiting_work(
@@ -686,13 +686,13 @@ class PostgresGovernanceRepository:
         if decision != "approved":
             return
         await conn.execute(
-            """update public.tasks set status='approved',version=version+1
+            """update bighead.tasks set status='approved',version=version+1
                 where id=$1 and organization_id=$2 and status='waiting_human'""",
             task_id,
             organization_id,
         )
         await conn.execute(
-            """update public.runs set status='queued',locked_by=null,locked_until=null
+            """update bighead.runs set status='queued',locked_by=null,locked_until=null
                 where task_id=$1 and organization_id=$2 and status='waiting'""",
             task_id,
             organization_id,
@@ -713,7 +713,7 @@ class PostgresGovernanceRepository:
         async with self.database.privileged() as conn:
             async with conn.transaction():
                 membership = await conn.fetchval(
-                    """select exists(select 1 from public.organization_members
+                    """select exists(select 1 from bighead.organization_members
                          where organization_id=$1 and user_id=$2 and status='active'
                            and role in ('owner','admin'))""",
                     organization_id,
@@ -722,9 +722,9 @@ class PostgresGovernanceRepository:
                 if not membership:
                     raise HTTPException(status_code=403, detail="Administrator role required")
                 inserted = await conn.fetchrow(
-                    """insert into public.agents(
+                    """insert into bighead.agents(
                            id,organization_id,name,slug,description,owner_user_id,risk_level,is_enabled)
-                       values($1,$2,$3,$4,$5,$6,$7::public.risk_level,$8)
+                       values($1,$2,$3,$4,$5,$6,$7::bighead.risk_level,$8)
                        on conflict (organization_id,slug) do nothing returning id""",
                     agent_id,
                     organization_id,
@@ -740,7 +740,7 @@ class PostgresGovernanceRepository:
                         status_code=409, detail="An agent with this slug already exists"
                     )
                 await conn.execute(
-                    """insert into public.agent_versions(
+                    """insert into bighead.agent_versions(
                            id,organization_id,agent_id,version,model_id,system_prompt,
                            configuration,published_at,created_by)
                        values($1,$2,$3,1,$4,$5,$6::jsonb,
@@ -757,9 +757,9 @@ class PostgresGovernanceRepository:
                     conn, organization_id, version_id, payload.skill_ids
                 )
                 await conn.execute(
-                    """insert into public.audit_log(
+                    """insert into bighead.audit_log(
                            organization_id,actor_user_id,actor_type,action,resource_type,resource_id,risk_level,changes_redacted)
-                       values($1,$2,'user','agent.created','agent',$3,$4::public.risk_level,$5::jsonb)""",
+                       values($1,$2,'user','agent.created','agent',$3,$4::bighead.risk_level,$5::jsonb)""",
                     organization_id,
                     user_id,
                     str(agent_id),
@@ -784,7 +784,7 @@ class PostgresGovernanceRepository:
                         if payload.model_id:
                             model_name = (
                                 await conn.fetchval(
-                                    "select name from public.models where id=$1", payload.model_id
+                                    "select name from bighead.models where id=$1", payload.model_id
                                 )
                                 or "hermes"
                             )
@@ -792,13 +792,13 @@ class PostgresGovernanceRepository:
                         skills_names = []
                         if payload.skill_ids:
                             rows = await conn.fetch(
-                                "select name from public.skills where id = any($1)",
+                                "select name from bighead.skills where id = any($1)",
                                 payload.skill_ids,
                             )
                             skills_names = [row["name"] for row in rows]
 
                         org_slug = await conn.fetchval(
-                            "select slug from public.organizations where id=$1", organization_id
+                            "select slug from bighead.organizations where id=$1", organization_id
                         )
 
                         agent_data = {
@@ -831,7 +831,7 @@ class PostgresGovernanceRepository:
     ) -> dict[str, Any]:
         async with self.database.authenticated(user_id, organization_id) as conn:
             agent = await conn.fetchrow(
-                "select * from public.agents where id=$1 and organization_id=$2",
+                "select * from bighead.agents where id=$1 and organization_id=$2",
                 agent_id,
                 organization_id,
             )
@@ -840,8 +840,8 @@ class PostgresGovernanceRepository:
                           v.published_at,v.created_at,
                           coalesce(array_agg(avs.skill_id)
                             filter (where avs.skill_id is not null), '{}') skill_ids
-                     from public.agent_versions v
-                     left join public.agent_version_skills avs on avs.agent_version_id=v.id
+                     from bighead.agent_versions v
+                     left join bighead.agent_version_skills avs on avs.agent_version_id=v.id
                     where v.agent_id=$1 and v.organization_id=$2
                     group by v.id
                     order by v.version desc""",
@@ -849,7 +849,7 @@ class PostgresGovernanceRepository:
                 organization_id,
             )
             consumers = await conn.fetch(
-                """select id,title,status::text from public.tasks
+                """select id,title,status::text from bighead.tasks
                      where organization_id=$1 and agent_id=$2
                      order by updated_at desc limit 25""",
                 organization_id,
@@ -871,8 +871,8 @@ class PostgresGovernanceRepository:
             async with conn.transaction():
                 current = await conn.fetchrow(
                     """select a.*,coalesce(max(v.version),0) current_version
-                         from public.agents a left join public.agent_versions v on v.agent_id=a.id
-                        join public.organization_members m on m.organization_id=a.organization_id
+                         from bighead.agents a left join bighead.agent_versions v on v.agent_id=a.id
+                        join bighead.organization_members m on m.organization_id=a.organization_id
                           and m.user_id=$3 and m.status='active' and m.role in ('owner','admin')
                         where a.id=$1 and a.organization_id=$2 group by a.id""",
                     agent_id,
@@ -885,7 +885,7 @@ class PostgresGovernanceRepository:
                     raise HTTPException(status_code=409, detail="Agent version conflict")
                 if payload.is_enabled is False:
                     in_use = await conn.fetchval(
-                        """select exists(select 1 from public.tasks where organization_id=$1
+                        """select exists(select 1 from bighead.tasks where organization_id=$1
                               and agent_id=$2 and status not in ('done','canceled'))""",
                         organization_id,
                         agent_id,
@@ -894,7 +894,7 @@ class PostgresGovernanceRepository:
                         raise HTTPException(status_code=409, detail="Agent has active consumers")
                 if payload.is_enabled is True and payload.model_id is None:
                     has_published_model = await conn.fetchval(
-                        """select exists(select 1 from public.agent_versions
+                        """select exists(select 1 from bighead.agent_versions
                              where agent_id=$1 and organization_id=$2
                                and model_id is not null and published_at is not null)""",
                         agent_id,
@@ -906,9 +906,9 @@ class PostgresGovernanceRepository:
                             detail="A model is required before enabling an agent",
                         )
                 await conn.execute(
-                    """update public.agents set name=coalesce($3,name),
+                    """update bighead.agents set name=coalesce($3,name),
                               description=coalesce($4,description),
-                              risk_level=coalesce($5::public.risk_level,risk_level),
+                              risk_level=coalesce($5::bighead.risk_level,risk_level),
                               is_enabled=coalesce($6,is_enabled),updated_at=now()
                         where id=$1 and organization_id=$2""",
                     agent_id,
@@ -923,7 +923,7 @@ class PostgresGovernanceRepository:
                 if version_changed:
                     latest = await conn.fetchrow(
                         """select id,model_id,system_prompt,configuration
-                             from public.agent_versions
+                             from bighead.agent_versions
                             where agent_id=$1 and organization_id=$2
                             order by version desc limit 1""",
                         agent_id,
@@ -935,7 +935,7 @@ class PostgresGovernanceRepository:
                         )
                     version_id = uuid4()
                     inserted_version = await conn.fetchval(
-                        """insert into public.agent_versions(
+                        """insert into bighead.agent_versions(
                                id,organization_id,agent_id,version,model_id,
                                system_prompt,configuration,published_at,created_by)
                            values($1,$2,$3,$4,$5,$6,$7::jsonb,
@@ -964,17 +964,17 @@ class PostgresGovernanceRepository:
                         )
                     else:
                         await conn.execute(
-                            """insert into public.agent_version_skills(
+                            """insert into bighead.agent_version_skills(
                                    organization_id,agent_version_id,skill_id,configuration)
                                select organization_id,$2,skill_id,configuration
-                                 from public.agent_version_skills where agent_version_id=$1""",
+                                 from bighead.agent_version_skills where agent_version_id=$1""",
                             latest["id"],
                             version_id,
                         )
                 await conn.execute(
-                    """insert into public.audit_log(
+                    """insert into bighead.audit_log(
                            organization_id,actor_user_id,actor_type,action,resource_type,resource_id,risk_level,changes_redacted)
-                       values($1,$2,'user','agent.updated','agent',$3,$4::public.risk_level,$5::jsonb)""",
+                       values($1,$2,'user','agent.updated','agent',$3,$4::bighead.risk_level,$5::jsonb)""",
                     organization_id,
                     user_id,
                     str(agent_id),
@@ -1004,8 +1004,8 @@ class PostgresGovernanceRepository:
                             """select a.name, a.risk_level::text, a.is_enabled,
                                       v.id as agent_version_id, v.version,
                                       v.system_prompt, v.model_id
-                                 from public.agents a
-                                 join public.agent_versions v on v.agent_id=a.id
+                                 from bighead.agents a
+                                 join bighead.agent_versions v on v.agent_id=a.id
                                 where a.id=$1 and a.organization_id=$2
                                   and v.published_at is not null
                                 order by v.version desc limit 1""",
@@ -1016,8 +1016,8 @@ class PostgresGovernanceRepository:
                         if agent_row:
                             skills_rows = await conn.fetch(
                                 """select s.name
-                                     from public.agent_version_skills avs
-                                     join public.skills s on s.id=avs.skill_id
+                                     from bighead.agent_version_skills avs
+                                     join bighead.skills s on s.id=avs.skill_id
                                     where avs.agent_version_id=$1""",
                                 agent_row["agent_version_id"],
                             )
@@ -1027,14 +1027,14 @@ class PostgresGovernanceRepository:
                             if agent_row["model_id"]:
                                 model_name = (
                                     await conn.fetchval(
-                                        "select name from public.models where id=$1",
+                                        "select name from bighead.models where id=$1",
                                         agent_row["model_id"],
                                     )
                                     or "hermes"
                                 )
 
                             org_slug = await conn.fetchval(
-                                "select slug from public.organizations where id=$1",
+                                "select slug from bighead.organizations where id=$1",
                                 organization_id,
                             )
 
@@ -1069,8 +1069,8 @@ class PostgresGovernanceRepository:
             async with conn.transaction():
                 current = await conn.fetchrow(
                     """select a.risk_level::text,coalesce(max(v.version),0) current_version
-                         from public.agents a left join public.agent_versions v on v.agent_id=a.id
-                         join public.organization_members m on m.organization_id=a.organization_id
+                         from bighead.agents a left join bighead.agent_versions v on v.agent_id=a.id
+                         join bighead.organization_members m on m.organization_id=a.organization_id
                            and m.user_id=$3 and m.status='active' and m.role in ('owner','admin')
                         where a.id=$1 and a.organization_id=$2 group by a.id""",
                     agent_id,
@@ -1082,7 +1082,7 @@ class PostgresGovernanceRepository:
                 if current["current_version"] != expected_version:
                     raise HTTPException(status_code=409, detail="Agent version conflict")
                 in_use = await conn.fetchval(
-                    """select exists(select 1 from public.tasks
+                    """select exists(select 1 from bighead.tasks
                            where organization_id=$1 and agent_id=$2
                            and status not in ('done','canceled'))""",
                     organization_id,
@@ -1091,7 +1091,7 @@ class PostgresGovernanceRepository:
                 if in_use:
                     raise HTTPException(status_code=409, detail="Agent has active consumers")
                 archived = await conn.fetchval(
-                    """update public.agents set is_enabled=false,updated_at=now()
+                    """update bighead.agents set is_enabled=false,updated_at=now()
                          where id=$1 and organization_id=$2 returning id""",
                     agent_id,
                     organization_id,
@@ -1099,10 +1099,10 @@ class PostgresGovernanceRepository:
                 if not archived:
                     raise HTTPException(status_code=409, detail="Agent is already archived")
                 await conn.execute(
-                    """insert into public.audit_log(
+                    """insert into bighead.audit_log(
                            organization_id,actor_user_id,actor_type,action,resource_type,
                            resource_id,risk_level)
-                       values($1,$2,'user','agent.archived','agent',$3,$4::public.risk_level)""",
+                       values($1,$2,'user','agent.archived','agent',$3,$4::bighead.risk_level)""",
                     organization_id,
                     user_id,
                     str(agent_id),
@@ -1122,7 +1122,7 @@ class PostgresGovernanceRepository:
 
                         sync = HermesProfileSync(self.hermes_profiles_dir)
                         version_rows = await conn.fetch(
-                            """select id from public.agent_versions
+                            """select id from bighead.agent_versions
                                  where organization_id=$1 and agent_id=$2""",
                             organization_id,
                             agent_id,
@@ -1145,9 +1145,9 @@ class PostgresGovernanceRepository:
     ) -> None:
         for skill_id in dict.fromkeys(skill_ids):
             result = await conn.execute(
-                """insert into public.agent_version_skills(
+                """insert into bighead.agent_version_skills(
                        organization_id,agent_version_id,skill_id)
-                   select $1,$2,id from public.skills where id=$3 and organization_id=$1""",
+                   select $1,$2,id from bighead.skills where id=$3 and organization_id=$1""",
                 organization_id,
                 version_id,
                 skill_id,
@@ -1168,8 +1168,8 @@ class PostgresGovernanceRepository:
         async with self.database.privileged() as conn:
             skill = await conn.fetchrow(
                 """select s.input_schema,s.is_enabled,s.timeout_seconds,s.max_retries
-                     from public.skills s
-                    join public.organization_members m on m.organization_id=s.organization_id
+                     from bighead.skills s
+                    join bighead.organization_members m on m.organization_id=s.organization_id
                       and m.user_id=$3 and m.status='active' and m.role in ('owner','admin')
                     where s.id=$1 and s.organization_id=$2""",
                 skill_id,
@@ -1206,12 +1206,12 @@ class PostgresGovernanceRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             providers = await conn.fetch(
                 """select id,name,provider_key,is_enabled,settings
-                     from public.model_providers where organization_id=$1 order by name""",
+                     from bighead.model_providers where organization_id=$1 order by name""",
                 organization_id,
             )
             models = await conn.fetch(
                 """select id,provider_id,model_key,capabilities,input_cost_per_million,
-                          output_cost_per_million,price_valid_from,is_enabled from public.models
+                          output_cost_per_million,price_valid_from,is_enabled from bighead.models
                      where organization_id=$1 order by model_key""",
                 organization_id,
             )
@@ -1225,8 +1225,8 @@ class PostgresGovernanceRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
                 """select v.id,v.agent_id,a.name as agent_name,v.version,v.system_prompt,
-                          v.published_at,v.created_at from public.agent_versions v
-                     join public.agents a on a.id=v.agent_id where v.organization_id=$1
+                          v.published_at,v.created_at from bighead.agent_versions v
+                     join bighead.agents a on a.id=v.agent_id where v.organization_id=$1
                      order by v.created_at desc limit 100""",
                 organization_id,
             )
@@ -1248,7 +1248,7 @@ class PostgresGovernanceRepository:
     ) -> WorkflowValidateResponse:
         async with self.database.authenticated(user_id, organization_id) as conn:
             exists = await conn.fetchval(
-                "select exists(select 1 from public.workflows where id=$1 and organization_id=$2)",
+                "select exists(select 1 from bighead.workflows where id=$1 and organization_id=$2)",
                 workflow_id,
                 organization_id,
             )
@@ -1268,12 +1268,12 @@ class PostgresGovernanceRepository:
             rows = await conn.fetch(
                 """select wv.id,wv.version,wv.definition,wv.published_at,wv.created_by,
                           wv.created_at,not exists(
-                            select 1 from public.runs r join public.tasks t on t.id=r.task_id
+                            select 1 from bighead.runs r join bighead.tasks t on t.id=r.task_id
                              where r.organization_id=wv.organization_id
                                and r.status in ('queued','running','waiting')
                                and (t.workflow_version_id=wv.id or r.workflow_version_id=wv.id)
                           ) rollback_safe
-                     from public.workflow_versions wv
+                     from bighead.workflow_versions wv
                     where wv.workflow_id=$1 and wv.organization_id=$2
                       and ($3::integer is null or wv.version<$3)
                     order by wv.version desc limit 51""",
@@ -1328,7 +1328,7 @@ class PostgresGovernanceRepository:
                     f"workflow-rollback:{organization_id}:{workflow_id}",
                 )
                 allowed = await conn.fetchval(
-                    """select exists(select 1 from public.organization_members
+                    """select exists(select 1 from bighead.organization_members
                         where organization_id=$1 and user_id=$2 and status='active'
                           and role in ('owner','admin'))""",
                     organization_id,
@@ -1337,7 +1337,7 @@ class PostgresGovernanceRepository:
                 if not allowed:
                     raise HTTPException(status_code=403, detail="Administrator role required")
                 latest = await conn.fetchval(
-                    """select max(version) from public.workflow_versions
+                    """select max(version) from bighead.workflow_versions
                         where workflow_id=$1 and organization_id=$2""",
                     workflow_id,
                     organization_id,
@@ -1347,7 +1347,7 @@ class PostgresGovernanceRepository:
                 if latest != payload.expected_latest_version:
                     raise HTTPException(status_code=409, detail="Workflow version conflict")
                 target = await conn.fetchrow(
-                    """select id,definition from public.workflow_versions
+                    """select id,definition from bighead.workflow_versions
                         where workflow_id=$1 and organization_id=$2 and version=$3""",
                     workflow_id,
                     organization_id,
@@ -1356,7 +1356,7 @@ class PostgresGovernanceRepository:
                 if not target:
                     raise HTTPException(status_code=422, detail="Rollback target not found")
                 created = await conn.fetchrow(
-                    """insert into public.workflow_versions(
+                    """insert into bighead.workflow_versions(
                            organization_id,workflow_id,version,definition,published_at,created_by)
                        values($1,$2,$3,$4,now(),$5)
                        returning id,version,published_at,created_at""",
@@ -1367,8 +1367,8 @@ class PostgresGovernanceRepository:
                     user_id,
                 )
                 await conn.execute(
-                    """update public.playbooks p set workflow_version_id=$4
-                        from public.workflow_versions old
+                    """update bighead.playbooks p set workflow_version_id=$4
+                        from bighead.workflow_versions old
                        where p.organization_id=$1 and old.organization_id=$1
                          and p.workflow_version_id=old.id and old.workflow_id=$2
                          and old.version=$3""",
@@ -1413,7 +1413,7 @@ class PostgresGovernanceRepository:
                     f"playbook:{organization_id}:{key}",
                 )
                 membership = await conn.fetchval(
-                    """select exists(select 1 from public.organization_members
+                    """select exists(select 1 from bighead.organization_members
                         where organization_id=$1 and user_id=$2 and status='active')""",
                     organization_id,
                     user_id,
@@ -1422,7 +1422,7 @@ class PostgresGovernanceRepository:
                     raise HTTPException(status_code=403, detail="Active tenant membership required")
                 if payload.owner_id is not None:
                     owner_valid = await conn.fetchval(
-                        """select exists(select 1 from public.organization_members
+                        """select exists(select 1 from bighead.organization_members
                             where organization_id=$1 and user_id=$2 and status='active')""",
                         organization_id,
                         payload.owner_id,
@@ -1432,8 +1432,8 @@ class PostgresGovernanceRepository:
                             status_code=422, detail="Owner must be active in tenant"
                         )
                 existing = await conn.fetchrow(
-                    """select r.id,r.task_id,t.metadata from public.runs r
-                        join public.tasks t on t.id=r.task_id
+                    """select r.id,r.task_id,t.metadata from bighead.runs r
+                        join bighead.tasks t on t.id=r.task_id
                         where r.organization_id=$1 and r.idempotency_key=$2""",
                     organization_id,
                     key,
@@ -1454,7 +1454,7 @@ class PostgresGovernanceRepository:
                     )
                 playbook = await conn.fetchrow(
                     """select p.name,p.workflow_version_id,p.default_inputs
-                         from public.playbooks p join public.organization_members m
+                         from bighead.playbooks p join bighead.organization_members m
                            on m.organization_id=p.organization_id
                         where p.id=$1 and p.organization_id=$2 and p.is_enabled
                           and m.user_id=$3 and m.status='active'""",
@@ -1488,7 +1488,7 @@ class PostgresGovernanceRepository:
                     "parameters": payload.parameters,
                 }
                 await conn.execute(
-                    """insert into public.tasks(id,organization_id,title,objective,risk_level,
+                    """insert into bighead.tasks(id,organization_id,title,objective,risk_level,
                            requester_id,assignee_id,workflow_version_id,metadata)
                        values($1,$2,$3,$4,'low',$5,$6,$7,$8::jsonb)""",
                     task_id,
@@ -1501,7 +1501,7 @@ class PostgresGovernanceRepository:
                     json.dumps(metadata),
                 )
                 await conn.execute(
-                    """insert into public.runs(
+                    """insert into bighead.runs(
                            id,organization_id,task_id,workflow_version_id,idempotency_key,
                            max_attempts,retry_backoff_seconds,policy_snapshot)
                        values($1,$2,$3,$4,$5,$6,$7,$8::jsonb)""",
@@ -1531,20 +1531,20 @@ class PostgresGovernanceRepository:
             "agents": """select a.id,a.name,a.slug,a.description,a.owner_user_id,a.risk_level::text,
                          a.trust_score,a.is_enabled,a.updated_at,
                          case when a.is_enabled then 'active'
-                              when exists(select 1 from public.agent_versions v
+                              when exists(select 1 from bighead.agent_versions v
                                            where v.agent_id=a.id
                                              and v.published_at is not null)
                                 then 'archived'
                               else 'draft' end lifecycle
-                    from public.agents a where a.organization_id=$1
+                    from bighead.agents a where a.organization_id=$1
                    order by updated_at desc limit 100""",
             "skills": """select id,name,slug,description,input_schema,output_schema,
                          risk_level::text,requires_approval,timeout_seconds,max_retries,
                          is_enabled,updated_at
-                    from public.skills where organization_id=$1
+                    from bighead.skills where organization_id=$1
                    order by updated_at desc limit 100""",
             "workflows": """select id,name,slug,description,owner_user_id,is_archived,updated_at
-                    from public.workflows where organization_id=$1
+                    from bighead.workflows where organization_id=$1
                    order by updated_at desc limit 100""",
         }
         page_query = queries.get(table)
@@ -1646,7 +1646,7 @@ async def _emit(
     payload: dict[str, Any],
 ) -> None:
     await conn.execute(
-        """insert into public.event_outbox(
+        """insert into bighead.event_outbox(
                organization_id,event_type,aggregate_type,aggregate_id,payload)
            values($1,$2,$3,$4,$5::jsonb)""",
         organization_id,

@@ -71,7 +71,7 @@ class PostgresArtifactRepository:
         }
         async with self.database.authenticated(record.created_by, record.organization_id) as conn:
             await conn.execute(
-                """insert into public.artifacts
+                """insert into bighead.artifacts
                      (id, organization_id, name, kind, storage_bucket, storage_path,
                       mime_type, size_bytes, checksum_sha256, metadata, created_by,
                       quarantine_status)
@@ -92,7 +92,7 @@ class PostgresArtifactRepository:
         row = await pool.fetchrow(
             """select id, organization_id, created_by, storage_path, checksum_sha256,
                       quarantine_status::text status
-                 from public.artifacts where id=$1 and organization_id=$2""",
+                 from bighead.artifacts where id=$1 and organization_id=$2""",
             artifact_id,
             organization_id,
         )
@@ -101,7 +101,7 @@ class PostgresArtifactRepository:
     async def mark_pending(self, artifact_id: UUID, checksum: str) -> ArtifactRecord | None:
         pool = await self.database.pool()
         row = await pool.fetchrow(
-            """update public.artifacts
+            """update bighead.artifacts
                   set quarantine_status = 'pending'
                 where id=$1 and checksum_sha256=$2
                   and quarantine_status in ('initiated','pending')

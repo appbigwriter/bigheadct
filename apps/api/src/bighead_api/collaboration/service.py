@@ -193,7 +193,7 @@ class PostgresCollaborationRepository:
         after = _decode_cursor(cursor)
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
-                """select id, name, description, is_private, created_at from public.rooms
+                """select id, name, description, is_private, created_at from bighead.rooms
                    where organization_id=$1 and ($2::text is null or
                      ($2='private' and is_private) or ($2='public' and not is_private))
                      and ($3::timestamptz is null or (created_at,id) < ($3,$4))
@@ -207,7 +207,7 @@ class PostgresCollaborationRepository:
             counts = await conn.fetchrow(
                 """select count(*)::int total,
                           count(*) filter(where is_private)::int private
-                     from public.rooms where organization_id=$1""",
+                     from bighead.rooms where organization_id=$1""",
                 organization_id,
             )
         next_cursor = _cursor(rows[limit - 1]) if len(rows) > limit else None
@@ -218,8 +218,8 @@ class PostgresCollaborationRepository:
     ) -> Room:
         async with self.database.privileged() as conn:
             row = await conn.fetchrow(
-                """insert into public.rooms(organization_id,name,description,is_private,created_by)
-                   select $1,$2,$3,$4,$5 where exists(select 1 from public.organization_members
+                """insert into bighead.rooms(organization_id,name,description,is_private,created_by)
+                   select $1,$2,$3,$4,$5 where exists(select 1 from bighead.organization_members
                      where organization_id=$1 and user_id=$5 and status='active')
                    returning id,name,description,is_private,created_at""",
                 organization_id,
@@ -232,7 +232,7 @@ class PostgresCollaborationRepository:
                 raise HTTPException(status_code=403, detail="Active tenant membership required")
             if payload.is_private:
                 await conn.execute(
-                    """insert into public.room_members(
+                    """insert into bighead.room_members(
                          organization_id,room_id,user_id,is_moderator
                        ) values($1,$2,$3,true)""",
                     organization_id,
@@ -247,10 +247,10 @@ class PostgresCollaborationRepository:
     ) -> RoomDetailResponse:
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members m
+                """select exists(select 1 from bighead.organization_members m
                    where m.organization_id=$1 and m.user_id=$2 and m.status='active'
                      and (m.role in ('owner','admin','manager') or exists(
-                       select 1 from public.room_members rm where rm.room_id=$3
+                       select 1 from bighead.room_members rm where rm.room_id=$3
                          and rm.user_id=$2 and rm.is_moderator)))""",
                 organization_id,
                 user_id,
@@ -259,7 +259,7 @@ class PostgresCollaborationRepository:
             if not allowed:
                 raise HTTPException(status_code=403, detail="Room manager role required")
             current_room = await conn.fetchrow(
-                """select id,is_private from public.rooms
+                """select id,is_private from bighead.rooms
                     where id=$1 and organization_id=$2 for update""",
                 room_id,
                 organization_id,
@@ -273,7 +273,7 @@ class PostgresCollaborationRepository:
             )
             for delta in payload.members_delta:
                 if delta.action in {"add", "update"} and not await conn.fetchval(
-                    """select exists(select 1 from public.organization_members
+                    """select exists(select 1 from bighead.organization_members
                          where organization_id=$1 and user_id=$2 and status='active')""",
                     organization_id,
                     delta.user_id,
@@ -286,8 +286,8 @@ class PostgresCollaborationRepository:
                     delta.action == "update" and not delta.is_moderator
                 ):
                     is_last = await conn.fetchval(
-                        """select is_moderator and (select count(*) from public.room_members
-                           where room_id=$1 and is_moderator)=1 from public.room_members
+                        """select is_moderator and (select count(*) from bighead.room_members
+                           where room_id=$1 and is_moderator)=1 from bighead.room_members
                            where room_id=$1 and user_id=$2""",
                         room_id,
                         delta.user_id,
@@ -298,13 +298,13 @@ class PostgresCollaborationRepository:
                         )
                 if delta.action == "remove":
                     await conn.execute(
-                        "delete from public.room_members where room_id=$1 and user_id=$2",
+                        "delete from bighead.room_members where room_id=$1 and user_id=$2",
                         room_id,
                         delta.user_id,
                     )
                 else:
                     await conn.execute(
-                        """insert into public.room_members(organization_id,room_id,user_id,is_moderator)
+                        """insert into bighead.room_members(organization_id,room_id,user_id,is_moderator)
                            values($1,$2,$3,$4) on conflict(room_id,user_id) do update
                            set is_moderator=excluded.is_moderator""",
                         organization_id,
@@ -314,13 +314,13 @@ class PostgresCollaborationRepository:
                     )
             if target_private:
                 moderator_count = await conn.fetchval(
-                    """select count(*) from public.room_members
+                    """select count(*) from bighead.room_members
                         where room_id=$1 and is_moderator""",
                     room_id,
                 )
                 if moderator_count == 0:
                     await conn.execute(
-                        """insert into public.room_members(
+                        """insert into bighead.room_members(
                              organization_id,room_id,user_id,is_moderator
                            ) values($1,$2,$3,true)
                            on conflict(room_id,user_id) do update set is_moderator=true""",
@@ -329,7 +329,7 @@ class PostgresCollaborationRepository:
                         user_id,
                     )
             row = await conn.fetchrow(
-                """update public.rooms set name=coalesce($3,name),
+                """update bighead.rooms set name=coalesce($3,name),
                      description=case when $4::boolean then $5 else description end,
                      is_private=coalesce($6,is_private), updated_at=now()
                    where id=$1 and organization_id=$2
@@ -344,7 +344,7 @@ class PostgresCollaborationRepository:
             if not row:
                 raise HTTPException(status_code=404, detail="Room not found")
             member_rows = await conn.fetch(
-                "select user_id,is_moderator from public.room_members where room_id=$1 order by created_at",
+                "select user_id,is_moderator from bighead.room_members where room_id=$1 order by created_at",
                 room_id,
             )
             await self._emit(
@@ -375,7 +375,7 @@ class PostgresCollaborationRepository:
     ) -> tuple[Room, list[RoomMember], bool]:
         async with self.database.authenticated(user_id, organization_id) as conn:
             room_row = await conn.fetchrow(
-                """select id,name,description,is_private,created_at from public.rooms
+                """select id,name,description,is_private,created_at from bighead.rooms
                     where id=$1 and organization_id=$2""",
                 room_id,
                 organization_id,
@@ -383,14 +383,14 @@ class PostgresCollaborationRepository:
             if not room_row:
                 raise HTTPException(status_code=404, detail="Room not found")
             member_rows = await conn.fetch(
-                """select user_id,is_moderator from public.room_members
+                """select user_id,is_moderator from bighead.room_members
                     where room_id=$1 and organization_id=$2
                     order by created_at,user_id""",
                 room_id,
                 organization_id,
             )
             can_manage = await conn.fetchval(
-                """select private.current_user_has_role($1, array['owner','admin','manager']::public.member_role[])
+                """select private.current_user_has_role($1, array['owner','admin','manager']::bighead.member_role[])
                        or private.current_user_is_room_member($2, true)""",
                 organization_id,
                 room_id,
@@ -402,7 +402,7 @@ class PostgresCollaborationRepository:
     ) -> tuple[Room, list[RoomAccessRequest]]:
         async with self.database.authenticated(user_id, organization_id) as conn:
             room_row = await conn.fetchrow(
-                """select id,name,description,is_private,created_at from public.rooms
+                """select id,name,description,is_private,created_at from bighead.rooms
                     where id=$1 and organization_id=$2""",
                 room_id,
                 organization_id,
@@ -412,7 +412,7 @@ class PostgresCollaborationRepository:
             requests = await conn.fetch(
                 """select r.id,r.room_id,r.requested_by,u.email as requested_by_email,r.note,
                           r.status::text,r.reviewed_by,r.reviewed_at,r.created_at,r.updated_at
-                     from public.room_access_requests r
+                     from bighead.room_access_requests r
                      left join auth.users u on u.id = r.requested_by
                     where r.organization_id=$1 and r.room_id=$2
                       and r.status = 'pending'
@@ -433,7 +433,7 @@ class PostgresCollaborationRepository:
         async with self.database.privileged() as conn:
             await self._lock_active_membership(conn, organization_id, user_id)
             room = await conn.fetchrow(
-                """select id,is_private from public.rooms
+                """select id,is_private from bighead.rooms
                     where id=$1 and organization_id=$2 for share""",
                 room_id,
                 organization_id,
@@ -443,13 +443,13 @@ class PostgresCollaborationRepository:
             if not room["is_private"]:
                 raise HTTPException(status_code=409, detail="Public rooms do not require access requests")
             if await conn.fetchval(
-                "select exists(select 1 from public.room_members where room_id=$1 and user_id=$2)",
+                "select exists(select 1 from bighead.room_members where room_id=$1 and user_id=$2)",
                 room_id,
                 user_id,
             ):
                 raise HTTPException(status_code=409, detail="Room access already granted")
             row = await conn.fetchrow(
-                """insert into public.room_access_requests(
+                """insert into bighead.room_access_requests(
                      organization_id, room_id, requested_by, note
                    ) values($1,$2,$3,$4)
                    on conflict (room_id, requested_by) where status = 'pending'
@@ -474,10 +474,10 @@ class PostgresCollaborationRepository:
     ) -> RoomDetailResponse:
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members m
+                """select exists(select 1 from bighead.organization_members m
                    where m.organization_id=$1 and m.user_id=$2 and m.status='active'
                      and (m.role in ('owner','admin','manager') or exists(
-                       select 1 from public.room_members rm where rm.room_id=$3
+                       select 1 from bighead.room_members rm where rm.room_id=$3
                          and rm.user_id=$2 and rm.is_moderator)))""",
                 organization_id,
                 user_id,
@@ -487,7 +487,7 @@ class PostgresCollaborationRepository:
                 raise HTTPException(status_code=403, detail="Room manager role required")
             async with conn.transaction():
                 current_request = await conn.fetchrow(
-                    """select id,room_id,requested_by,status::text from public.room_access_requests
+                    """select id,room_id,requested_by,status::text from bighead.room_access_requests
                         where id=$1 and organization_id=$2 and room_id=$3 for update""",
                     request_id,
                     organization_id,
@@ -499,7 +499,7 @@ class PostgresCollaborationRepository:
                     raise HTTPException(status_code=409, detail="Access request already resolved")
                 if payload.status == "approved":
                     member = await conn.fetchval(
-                        """select exists(select 1 from public.organization_members
+                        """select exists(select 1 from bighead.organization_members
                              where organization_id=$1 and user_id=$2 and status='active')""",
                         organization_id,
                         current_request["requested_by"],
@@ -509,7 +509,7 @@ class PostgresCollaborationRepository:
                             status_code=422, detail="Requester is not an active tenant member"
                         )
                     await conn.execute(
-                        """insert into public.room_members(organization_id,room_id,user_id,is_moderator)
+                        """insert into bighead.room_members(organization_id,room_id,user_id,is_moderator)
                            values($1,$2,$3,false)
                            on conflict(room_id,user_id) do nothing""",
                         organization_id,
@@ -519,8 +519,8 @@ class PostgresCollaborationRepository:
                 elif payload.status != "rejected":
                     raise HTTPException(status_code=422, detail="Invalid access decision")
                 row = await conn.fetchrow(
-                    """update public.room_access_requests
-                           set status=$4::public.room_access_request_status,
+                    """update bighead.room_access_requests
+                           set status=$4::bighead.room_access_request_status,
                                reviewed_by=$5,
                                reviewed_at=now(),
                                updated_at=now()
@@ -535,7 +535,7 @@ class PostgresCollaborationRepository:
                 if not row:
                     raise HTTPException(status_code=404, detail="Access request not found")
                 member_rows = await conn.fetch(
-                    "select user_id,is_moderator from public.room_members where room_id=$1 order by created_at",
+                    "select user_id,is_moderator from bighead.room_members where room_id=$1 order by created_at",
                     room_id,
                 )
                 await self._emit(
@@ -578,10 +578,10 @@ class PostgresCollaborationRepository:
             raise HTTPException(status_code=422, detail="Email is required")
         async with self.database.privileged() as conn:
             allowed = await conn.fetchval(
-                """select exists(select 1 from public.organization_members m
+                """select exists(select 1 from bighead.organization_members m
                    where m.organization_id=$1 and m.user_id=$2 and m.status='active'
                      and (m.role in ('owner','admin','manager') or exists(
-                       select 1 from public.room_members rm where rm.room_id=$3
+                       select 1 from bighead.room_members rm where rm.room_id=$3
                          and rm.user_id=$2 and rm.is_moderator)))""",
                 organization_id,
                 user_id,
@@ -590,7 +590,7 @@ class PostgresCollaborationRepository:
             if not allowed:
                 raise HTTPException(status_code=403, detail="Room manager role required")
             room = await conn.fetchrow(
-                """select id,name,description,is_private,created_at from public.rooms
+                """select id,name,description,is_private,created_at from bighead.rooms
                     where id=$1 and organization_id=$2 for update""",
                 room_id,
                 organization_id,
@@ -604,7 +604,7 @@ class PostgresCollaborationRepository:
             if not target:
                 raise HTTPException(status_code=404, detail="Auth user not found for email")
             member = await conn.fetchval(
-                """select exists(select 1 from public.organization_members
+                """select exists(select 1 from bighead.organization_members
                      where organization_id=$1 and user_id=$2 and status='active')""",
                 organization_id,
                 target["id"],
@@ -612,7 +612,7 @@ class PostgresCollaborationRepository:
             if not member:
                 raise HTTPException(status_code=422, detail="Target user must be an active tenant member")
             await conn.execute(
-                """insert into public.room_members(organization_id,room_id,user_id,is_moderator)
+                """insert into bighead.room_members(organization_id,room_id,user_id,is_moderator)
                    values($1,$2,$3,false)
                    on conflict(room_id,user_id) do update set organization_id=excluded.organization_id""",
                 organization_id,
@@ -620,7 +620,7 @@ class PostgresCollaborationRepository:
                 target["id"],
             )
             member_rows = await conn.fetch(
-                "select user_id,is_moderator from public.room_members where room_id=$1 order by created_at",
+                "select user_id,is_moderator from bighead.room_members where room_id=$1 order by created_at",
                 room_id,
             )
             await self._emit(
@@ -654,7 +654,7 @@ class PostgresCollaborationRepository:
             rows = await conn.fetch(
                 """select a.id,a.name,a.kind,a.mime_type,a.size_bytes,
                           a.quarantine_status::text,a.created_at
-                     from public.artifacts a join public.rooms r on r.id=a.room_id
+                     from bighead.artifacts a join bighead.rooms r on r.id=a.room_id
                     where a.organization_id=$1 and a.room_id=$2
                       and ($3::timestamptz is null or (a.created_at,a.id)<($3,$4))
                     order by a.created_at desc,a.id desc limit $5""",
@@ -673,7 +673,7 @@ class PostgresCollaborationRepository:
         after = _decode_cursor(cursor)
         async with self.database.authenticated(user_id, organization_id) as conn:
             room = await conn.fetchrow(
-                "select id,name,description,is_private,created_at from public.rooms where id=$1 and organization_id=$2",
+                "select id,name,description,is_private,created_at from bighead.rooms where id=$1 and organization_id=$2",
                 room_id,
                 organization_id,
             )
@@ -681,7 +681,7 @@ class PostgresCollaborationRepository:
                 raise HTTPException(status_code=404, detail="Room not found")
             rows = await conn.fetch(
                 """select id,room_id,parent_message_id,author_user_id,body,metadata,edited_at,deleted_at,created_at
-                     from public.messages where room_id=$1 and organization_id=$2
+                     from bighead.messages where room_id=$1 and organization_id=$2
                        and ($3::timestamptz is null or (created_at,id)<($3,$4))
                      order by created_at desc,id desc limit $5""",
                 room_id,
@@ -702,7 +702,7 @@ class PostgresCollaborationRepository:
             if payload.client_id:
                 existing = await conn.fetchrow(
                     """select id,room_id,parent_message_id,author_user_id,body,metadata,edited_at,deleted_at,created_at
-                         from public.messages where organization_id=$1 and room_id=$2
+                         from bighead.messages where organization_id=$1 and room_id=$2
                            and author_user_id=$3 and metadata->>'client_id'=$4""",
                     organization_id,
                     room_id,
@@ -712,12 +712,12 @@ class PostgresCollaborationRepository:
                 if existing:
                     return _row(Message, existing)
             row = await conn.fetchrow(
-                """insert into public.messages(organization_id,room_id,parent_message_id,author_user_id,body,metadata)
+                """insert into bighead.messages(organization_id,room_id,parent_message_id,author_user_id,body,metadata)
                    select $1,$2,$3,$4,$5,$6::jsonb where exists(
-                     select 1 from public.rooms r join public.organization_members m on m.organization_id=r.organization_id
+                     select 1 from bighead.rooms r join bighead.organization_members m on m.organization_id=r.organization_id
                       where r.id=$2 and r.organization_id=$1 and m.user_id=$4 and m.status='active'
-                        and (not r.is_private or exists(select 1 from public.room_members rm where rm.room_id=r.id and rm.user_id=$4)))
-                     and ($3::uuid is null or exists(select 1 from public.messages parent
+                        and (not r.is_private or exists(select 1 from bighead.room_members rm where rm.room_id=r.id and rm.user_id=$4)))
+                     and ($3::uuid is null or exists(select 1 from bighead.messages parent
                        where parent.id=$3 and parent.organization_id=$1 and parent.room_id=$2))
                    on conflict do nothing
                    returning id,room_id,parent_message_id,author_user_id,body,metadata,edited_at,deleted_at,created_at""",
@@ -732,7 +732,7 @@ class PostgresCollaborationRepository:
                 row = await conn.fetchrow(
                     """select id,room_id,parent_message_id,author_user_id,body,metadata,
                               edited_at,deleted_at,created_at
-                         from public.messages where organization_id=$1 and room_id=$2
+                         from bighead.messages where organization_id=$1 and room_id=$2
                            and author_user_id=$3 and metadata->>'client_id'=$4""",
                     organization_id,
                     room_id,
@@ -757,13 +757,13 @@ class PostgresCollaborationRepository:
         async with self.database.privileged() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    """update public.messages m set body=$5,edited_at=now()
-                       from public.organization_members member, public.rooms room
+                    """update bighead.messages m set body=$5,edited_at=now()
+                       from bighead.organization_members member, bighead.rooms room
                       where m.id=$1 and m.room_id=$2 and m.organization_id=$3
                         and member.organization_id=m.organization_id and member.user_id=$4 and member.status='active'
                         and room.id=m.room_id and room.organization_id=m.organization_id
                         and (not room.is_private or exists(
-                          select 1 from public.room_members rm
+                          select 1 from bighead.room_members rm
                            where rm.organization_id=m.organization_id and rm.room_id=m.room_id
                              and rm.user_id=$4))
                         and m.deleted_at is null and (m.author_user_id=$4 or member.role in ('owner','admin','manager'))
@@ -801,13 +801,13 @@ class PostgresCollaborationRepository:
         async with self.database.privileged() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    """update public.messages m set body='[deleted]',deleted_at=now()
-                       from public.organization_members member, public.rooms room
+                    """update bighead.messages m set body='[deleted]',deleted_at=now()
+                       from bighead.organization_members member, bighead.rooms room
                       where m.id=$1 and m.room_id=$2 and m.organization_id=$3
                         and member.organization_id=m.organization_id and member.user_id=$4 and member.status='active'
                         and room.id=m.room_id and room.organization_id=m.organization_id
                         and (not room.is_private or exists(
-                          select 1 from public.room_members rm
+                          select 1 from bighead.room_members rm
                            where rm.organization_id=m.organization_id and rm.room_id=m.room_id
                              and rm.user_id=$4))
                         and m.deleted_at is null and (m.author_user_id=$4 or member.role in ('owner','admin','manager'))
@@ -855,7 +855,7 @@ class PostgresCollaborationRepository:
             rows = await conn.fetch(
                 """select id,room_id,source_message_id,title,objective,status::text,priority,risk_level::text,
                           requester_id,assignee_id,workflow_version_id,due_at,sla_at,version,metadata,created_at,updated_at
-                     from public.tasks where organization_id=$1 and ($2::text is null or status::text=$2)
+                     from bighead.tasks where organization_id=$1 and ($2::text is null or status::text=$2)
                        and ($3::uuid is null or assignee_id=$3)
                        and ($4::text is null or risk_level::text=$4)
                        and ($5::uuid is null or room_id=$5)
@@ -884,7 +884,7 @@ class PostgresCollaborationRepository:
                 """select id,room_id,source_message_id,project_id,team_id,title,objective,status::text,priority,
                           risk_level::text,requester_id,assignee_id,workflow_version_id,due_at,
                           sla_at,version,metadata,created_at,updated_at
-                     from public.tasks where id=$1 and organization_id=$2""",
+                     from bighead.tasks where id=$1 and organization_id=$2""",
                 task_id,
                 organization_id,
             )
@@ -918,16 +918,16 @@ class PostgresCollaborationRepository:
             try:
                 async with conn.transaction():
                     row = await conn.fetchrow(
-                        """insert into public.tasks(id,organization_id,room_id,source_message_id,project_id,team_id,title,objective,
+                        """insert into bighead.tasks(id,organization_id,room_id,source_message_id,project_id,team_id,title,objective,
                                risk_level,requester_id,assignee_id,workflow_version_id,sla_at,metadata)
                        select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb where exists(
-                         select 1 from public.organization_members where organization_id=$2 and user_id=$10 and status='active')
-                         and ($3::uuid is null or exists(select 1 from public.rooms
+                         select 1 from bighead.organization_members where organization_id=$2 and user_id=$10 and status='active')
+                         and ($3::uuid is null or exists(select 1 from bighead.rooms
                            where id=$3 and organization_id=$2))
-                         and ($4::uuid is null or exists(select 1 from public.messages
+                         and ($4::uuid is null or exists(select 1 from bighead.messages
                            where id=$4 and organization_id=$2 and ($3::uuid is null or room_id=$3)))
-                         and ($5::uuid is null or exists(select 1 from public.projects where id=$5 and organization_id=$2))
-                         and ($6::uuid is null or exists(select 1 from public.team_organizations where team_id=$6 and organization_id=$2))
+                         and ($5::uuid is null or exists(select 1 from bighead.projects where id=$5 and organization_id=$2))
+                         and ($6::uuid is null or exists(select 1 from bighead.team_organizations where team_id=$6 and organization_id=$2))
                        returning id,room_id,source_message_id,project_id,team_id,title,objective,status::text,priority,risk_level::text,
                          requester_id,assignee_id,workflow_version_id,due_at,sla_at,version,metadata,created_at,updated_at""",
                         task_id,
@@ -949,8 +949,8 @@ class PostgresCollaborationRepository:
                     raise HTTPException(status_code=403, detail="Active tenant membership required")
                 for dependency in dict.fromkeys(payload.dependencies):
                     result = await conn.execute(
-                        """insert into public.task_dependencies(organization_id,task_id,depends_on_task_id)
-                           select $1,$2,$3 where exists(select 1 from public.tasks where id=$3 and organization_id=$1)""",
+                        """insert into bighead.task_dependencies(organization_id,task_id,depends_on_task_id)
+                           select $1,$2,$3 where exists(select 1 from bighead.tasks where id=$3 and organization_id=$1)""",
                         organization_id,
                         task_id,
                         dependency,
@@ -990,7 +990,7 @@ class PostgresCollaborationRepository:
             async with self.database.authenticated(user_id, organization_id) as conn:
                 async with conn.transaction():
                     current = await conn.fetchrow(
-                        """select id,version from public.tasks
+                        """select id,version from bighead.tasks
                             where id=$1 and organization_id=$2 for update""",
                         task_id,
                         organization_id,
@@ -1000,15 +1000,15 @@ class PostgresCollaborationRepository:
                     if current["version"] != payload.expected_version:
                         raise HTTPException(status_code=409, detail="Task version conflict")
                     await conn.execute(
-                        "delete from public.task_dependencies where organization_id=$1 and task_id=$2",
+                        "delete from bighead.task_dependencies where organization_id=$1 and task_id=$2",
                         organization_id,
                         task_id,
                     )
                     for dependency in dict.fromkeys(payload.dependencies):
                         result = await conn.execute(
-                            """insert into public.task_dependencies(organization_id,task_id,depends_on_task_id)
+                            """insert into bighead.task_dependencies(organization_id,task_id,depends_on_task_id)
                                select $1,$2,$3 where $2<>$3 and exists(
-                                 select 1 from public.tasks where id=$3 and organization_id=$1)""",
+                                 select 1 from bighead.tasks where id=$3 and organization_id=$1)""",
                             organization_id,
                             task_id,
                             dependency,
@@ -1018,7 +1018,7 @@ class PostgresCollaborationRepository:
                                 status_code=422, detail=f"Dependency {dependency} is invalid"
                             )
                     row = await conn.fetchrow(
-                        """update public.tasks set version=version+1,updated_at=now()
+                        """update bighead.tasks set version=version+1,updated_at=now()
                            where id=$1 and organization_id=$2
                            returning id,room_id,source_message_id,title,objective,status::text,priority,risk_level::text,
                              requester_id,assignee_id,workflow_version_id,due_at,sla_at,version,metadata,created_at,updated_at""",
@@ -1036,8 +1036,8 @@ class PostgresCollaborationRepository:
             async with conn.transaction():
                 current = await conn.fetchrow(
                     """select task.version,task.assignee_id,task.requester_id,member.role::text actor_role
-                         from public.tasks task
-                         join public.organization_members member
+                         from bighead.tasks task
+                         join bighead.organization_members member
                            on member.organization_id=task.organization_id and member.user_id=$3
                           and member.status='active'
                         where task.id=$1 and task.organization_id=$2 for update of task""",
@@ -1055,7 +1055,7 @@ class PostgresCollaborationRepository:
                 if current["version"] != payload.expected_version:
                     raise HTTPException(status_code=409, detail="Task version conflict")
                 if payload.assignee_id and not await conn.fetchval(
-                    "select exists(select 1 from public.organization_members where organization_id=$1 and user_id=$2 and status='active')",
+                    "select exists(select 1 from bighead.organization_members where organization_id=$1 and user_id=$2 and status='active')",
                     organization_id,
                     payload.assignee_id,
                 ):
@@ -1063,7 +1063,7 @@ class PostgresCollaborationRepository:
                         status_code=422, detail="Assignee is not an active tenant member"
                     )
                 row = await conn.fetchrow(
-                    """update public.tasks set assignee_id=$3,version=version+1,updated_at=now()
+                    """update bighead.tasks set assignee_id=$3,version=version+1,updated_at=now()
                        where id=$1 and organization_id=$2 returning id,room_id,source_message_id,title,objective,status::text,priority,risk_level::text,requester_id,assignee_id,workflow_version_id,due_at,sla_at,version,metadata,created_at,updated_at""",
                     task_id,
                     organization_id,
@@ -1103,7 +1103,7 @@ class PostgresCollaborationRepository:
     ) -> tuple[Task, TimelineItem]:
         async with self.database.authenticated(user_id, organization_id) as conn:
             before = await conn.fetchrow(
-                "select status::text from public.tasks where id=$1 and organization_id=$2",
+                "select status::text from bighead.tasks where id=$1 and organization_id=$2",
                 task_id,
                 organization_id,
             )
@@ -1113,7 +1113,7 @@ class PostgresCollaborationRepository:
                 row = await conn.fetchrow(
                     """select id,room_id,source_message_id,title,objective,status::text,priority,risk_level::text,
                          requester_id,assignee_id,workflow_version_id,due_at,sla_at,version,metadata,created_at,updated_at
-                       from public.transition_task($1,$2,$3,$4)""",
+                       from bighead.transition_task($1,$2,$3,$4)""",
                     task_id,
                     payload.target_state.value,
                     payload.reason,
@@ -1134,7 +1134,7 @@ class PostgresCollaborationRepository:
             rows = await conn.fetch(
                 """select id,room_id,source_message_id,title,objective,status::text,priority,risk_level::text,
                          requester_id,assignee_id,workflow_version_id,due_at,sla_at,version,metadata,created_at,updated_at
-                     from public.tasks where organization_id=$1 and coalesce(due_at,sla_at)::date between $2 and $3
+                     from bighead.tasks where organization_id=$1 and coalesce(due_at,sla_at)::date between $2 and $3
                        and (cardinality($4::uuid[])=0 or assignee_id=any($4)) order by coalesce(due_at,sla_at),id""",
                 organization_id,
                 start,
@@ -1157,7 +1157,7 @@ class PostgresCollaborationRepository:
             rows = await conn.fetch(
                 """select id,task_id,status::text,attempt,locked_by,locked_until,
                           heartbeat_at,error_code,error_detail,created_at
-                     from public.runs where organization_id=$1
+                     from bighead.runs where organization_id=$1
                       and ($2::uuid is null or task_id=$2)
                       and ($3::text is null or status::text=$3)
                       and ($4::timestamptz is null or (created_at,id)<($4,$5))
@@ -1175,7 +1175,7 @@ class PostgresCollaborationRepository:
     async def retry_run(self, user_id: UUID, organization_id: UUID, run_id: UUID) -> Run:
         async with self.database.privileged() as conn:
             previous = await conn.fetchrow(
-                """select r.* from public.runs r join public.organization_members m
+                """select r.* from bighead.runs r join bighead.organization_members m
                      on m.organization_id=r.organization_id and m.user_id=$3 and m.status='active'
                     where r.id=$1 and r.organization_id=$2""",
                 run_id,
@@ -1196,7 +1196,7 @@ class PostgresCollaborationRepository:
             existing = await conn.fetchrow(
                 """select id,task_id,status::text,attempt,locked_by,locked_until,
                           heartbeat_at,error_code,error_detail,created_at
-                     from public.runs where organization_id=$1 and idempotency_key=$2""",
+                     from bighead.runs where organization_id=$1 and idempotency_key=$2""",
                 organization_id,
                 retry_key,
             )
@@ -1210,7 +1210,7 @@ class PostgresCollaborationRepository:
                         f"run-retry:{organization_id}:{run_id}",
                     )
                     previous = await conn.fetchrow(
-                        """select r.* from public.runs r join public.organization_members m
+                        """select r.* from bighead.runs r join bighead.organization_members m
                              on m.organization_id=r.organization_id and m.user_id=$3
                             and m.status='active'
                             where r.id=$1 and r.organization_id=$2 for update of r""",
@@ -1232,7 +1232,7 @@ class PostgresCollaborationRepository:
                     existing = await conn.fetchrow(
                         """select id,task_id,status::text,attempt,locked_by,locked_until,
                                   heartbeat_at,error_code,error_detail,created_at
-                             from public.runs
+                             from bighead.runs
                             where organization_id=$1 and idempotency_key=$2""",
                         organization_id,
                         retry_key,
@@ -1240,7 +1240,7 @@ class PostgresCollaborationRepository:
                     if existing:
                         return _row(Run, existing)
                     row = await conn.fetchrow(
-                        """insert into public.runs(id,organization_id,task_id,workflow_version_id,
+                        """insert into bighead.runs(id,organization_id,task_id,workflow_version_id,
                              status,idempotency_key,attempt,max_attempts,retry_backoff_seconds,
                              policy_snapshot)
                            values($1,$2,$3,$4,'queued',$5,$6,$7,$8,$9)
@@ -1280,7 +1280,7 @@ class PostgresCollaborationRepository:
                 row = await conn.fetchrow(
                     """select id,task_id,status::text,attempt,locked_by,locked_until,
                               heartbeat_at,error_code,error_detail,created_at
-                         from public.runs where organization_id=$1 and idempotency_key=$2""",
+                         from bighead.runs where organization_id=$1 and idempotency_key=$2""",
                     organization_id,
                     retry_key,
                 )
@@ -1296,7 +1296,7 @@ class PostgresCollaborationRepository:
             rows = await conn.fetch(
                 """select coalesce(error_code,'unknown') code,count(*)::int count,
                           count(distinct task_id)::int affected_tasks,max(created_at) latest_at
-                     from public.runs where organization_id=$1 and status='failed'
+                     from bighead.runs where organization_id=$1 and status='failed'
                     group by coalesce(error_code,'unknown') order by max(created_at) desc limit $2""",
                 organization_id,
                 limit,
@@ -1309,7 +1309,7 @@ class PostgresCollaborationRepository:
         row = await conn.fetchrow(
             """select id,room_id,source_message_id,title,objective,status::text,priority,risk_level::text,
                      requester_id,assignee_id,workflow_version_id,due_at,sla_at,version,metadata,created_at,updated_at
-                 from public.tasks where organization_id=$1 and metadata->>'idempotency_key'=$2""",
+                 from bighead.tasks where organization_id=$1 and metadata->>'idempotency_key'=$2""",
             organization_id,
             key,
         )
@@ -1322,7 +1322,7 @@ class PostgresCollaborationRepository:
         user_id: UUID,
     ) -> None:
         membership = await conn.fetchrow(
-            """select organization_id from public.organization_members
+            """select organization_id from bighead.organization_members
                 where organization_id=$1 and user_id=$2 and status='active'
                 for share""",
             organization_id,
@@ -1340,7 +1340,7 @@ class PostgresCollaborationRepository:
     ) -> None:
         await self._lock_active_membership(conn, organization_id, user_id)
         room = await conn.fetchrow(
-            """select id,is_private from public.rooms
+            """select id,is_private from bighead.rooms
                 where id=$1 and organization_id=$2 for share""",
             room_id,
             organization_id,
@@ -1349,7 +1349,7 @@ class PostgresCollaborationRepository:
             raise HTTPException(status_code=403, detail="Room access required")
         if room["is_private"]:
             room_member = await conn.fetchrow(
-                """select room_id from public.room_members
+                """select room_id from bighead.room_members
                     where room_id=$1 and user_id=$2 for share""",
                 room_id,
                 user_id,
@@ -1367,7 +1367,7 @@ class PostgresCollaborationRepository:
         payload: dict[str, Any],
     ) -> None:
         await conn.execute(
-            """insert into public.event_outbox(organization_id,event_type,aggregate_type,aggregate_id,payload)
+            """insert into bighead.event_outbox(organization_id,event_type,aggregate_type,aggregate_id,payload)
                values($1,$2,$3,$4,$5::jsonb)""",
             organization_id,
             event_type,
@@ -1387,7 +1387,7 @@ class PostgresCollaborationRepository:
         changes: dict[str, Any],
     ) -> None:
         await conn.execute(
-            """insert into public.audit_log(
+            """insert into bighead.audit_log(
                  organization_id,actor_user_id,actor_type,action,resource_type,
                  resource_id,changes_redacted
                ) values($1,$2,'user',$3,$4,$5,$6::jsonb)""",

@@ -91,7 +91,7 @@ async def list_connections(
     async with database.authenticated(_user(context), context.organization_id) as conn:
         rows = await conn.fetch(
             """select id,provider_key,display_name,status,configuration,last_synced_at
-                 from public.crm_connections where organization_id=$1 order by created_at desc""",
+                 from bighead.crm_connections where organization_id=$1 order by created_at desc""",
             context.organization_id,
         )
     return [
@@ -115,7 +115,7 @@ async def create_connection(
     secret_ref = _secret_reference(context.organization_id, payload.provider_key)
     async with database.authenticated(user_id, context.organization_id) as conn:
         row = await conn.fetchrow(
-            """insert into public.crm_connections
+            """insert into bighead.crm_connections
                  (organization_id,provider_key,display_name,secret_ref,webhook_secret_ref,configuration,created_by)
                values($1,$2,$3,$4,$5,$6::jsonb,$7)
                returning id,provider_key,display_name,status,configuration,last_synced_at""",
@@ -141,8 +141,8 @@ async def request_sync(
     user_id = _admin(context)
     async with database.privileged() as conn:
         row = await conn.fetchrow(
-            """select id from public.crm_connections c where c.id=$1 and c.organization_id=$2
-               and exists(select 1 from public.organization_members m where m.organization_id=$2
+            """select id from bighead.crm_connections c where c.id=$1 and c.organization_id=$2
+               and exists(select 1 from bighead.organization_members m where m.organization_id=$2
                  and m.user_id=$3 and m.status='active' and m.role in ('owner','admin'))""",
             connection_id,
             context.organization_id,
@@ -151,7 +151,7 @@ async def request_sync(
         if not row:
             raise HTTPException(status_code=404, detail="CRM connection not found")
         job_id = await conn.fetchval(
-            "select public.request_crm_sync($1,$2)", connection_id, user_id
+            "select bighead.request_crm_sync($1,$2)", connection_id, user_id
         )
     return {"connectionId": connection_id, "jobId": job_id, "status": "queued"}
 

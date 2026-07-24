@@ -27,24 +27,24 @@ from bighead_api.identity.models import (
 )
 
 ACTIVE_MEMBERSHIPS_QUERY = """select organization_id, user_id, role::text, status::text
-  from public.organization_members
+  from bighead.organization_members
  where user_id = $1 and status = 'active'
  order by created_at"""
 ACTIVE_OR_SUSPENDED_MEMBERSHIPS_QUERY = """
 select organization_id, user_id, role::text, status::text
-  from public.organization_members
+  from bighead.organization_members
  where user_id = $1 and status in ('active', 'suspended')
  order by created_at
 """
 ACTIVE_ORGANIZATIONS_QUERY = """select o.id, o.name, o.slug, o.timezone, o.locale
-  from public.organizations o
-  join public.organization_members m on m.organization_id = o.id
+  from bighead.organizations o
+  join bighead.organization_members m on m.organization_id = o.id
  where m.user_id = $1 and m.status = 'active'
  order by o.name"""
 ACTIVE_OR_SUSPENDED_ORGANIZATIONS_QUERY = """
 select o.id, o.name, o.slug, o.timezone, o.locale
-  from public.organizations o
-  join public.organization_members m on m.organization_id = o.id
+  from bighead.organizations o
+  join bighead.organization_members m on m.organization_id = o.id
  where m.user_id = $1 and m.status in ('active', 'suspended')
  order by o.name
 """
@@ -162,7 +162,7 @@ class PostgresIdentityRepository:
         async with self.database.authenticated(user_id, organization_id) as connection:
             row = await connection.fetchrow(
                 """select organization_id, user_id, role::text, status::text
-                     from public.organization_members
+                     from bighead.organization_members
                     where user_id = $1 and organization_id = $2""",
                 user_id,
                 organization_id,
@@ -175,7 +175,7 @@ class PostgresIdentityRepository:
         async with self.database.authenticated(user_id, organization_id) as connection:
             rows = await connection.fetch(
                 """select organization_id, user_id, role::text, status::text
-                     from public.organization_members
+                     from bighead.organization_members
                     where organization_id = $1 order by created_at""",
                 organization_id,
             )
@@ -187,7 +187,7 @@ class PostgresIdentityRepository:
         async with self.database.authenticated(user_id, organization_id) as connection:
             rows = await connection.fetch(
                 """select id,email::text,role::text,expires_at,accepted_at,revoked_at,created_at
-                     from public.organization_invites where organization_id=$1
+                     from bighead.organization_invites where organization_id=$1
                      order by created_at desc""",
                 organization_id,
             )
@@ -198,7 +198,7 @@ class PostgresIdentityRepository:
     ) -> OnboardingSubmitResponse:
         async with self.database.privileged() as connection:
             await connection.execute(
-                """insert into public.profiles(id, display_name, locale, timezone)
+                """insert into bighead.profiles(id, display_name, locale, timezone)
                      values ($1, $2, $3, $4)
                      on conflict (id) do update set display_name = excluded.display_name,
                        locale = excluded.locale, timezone = excluded.timezone""",
@@ -210,7 +210,7 @@ class PostgresIdentityRepository:
             settings = {"goals": payload.goals, "approvalPolicy": payload.approval_policy}
             try:
                 organization_id = await connection.fetchval(
-                    """insert into public.organizations
+                    """insert into bighead.organizations
                            (name, slug, timezone, locale, settings, created_by)
                          values ($1, $2, $3, $4, $5::jsonb, $6) returning id""",
                     payload.organization.name,
@@ -225,7 +225,7 @@ class PostgresIdentityRepository:
                     status_code=409, detail="Organization slug already exists"
                 ) from exc
             await connection.execute(
-                """insert into public.organization_members
+                """insert into bighead.organization_members
                        (organization_id, user_id, role, status, joined_at)
                      values ($1, $2, 'owner', 'active', now())""",
                 organization_id,
@@ -253,7 +253,7 @@ class PostgresIdentityRepository:
             row = await connection.fetchrow(
                 """select id, display_name, avatar_path, locale, timezone,
                           preferences, updated_at
-                     from public.profiles where id = $1""",
+                     from bighead.profiles where id = $1""",
                 user_id,
             )
         if not row:
@@ -267,7 +267,7 @@ class PostgresIdentityRepository:
         async with self.database.authenticated(user_id) as connection:
             current = await connection.fetchrow(
                 """select id, display_name, avatar_path, locale, timezone, preferences, updated_at
-                     from public.profiles where id = $1 for update""",
+                     from bighead.profiles where id = $1 for update""",
                 user_id,
             )
             if not current:
@@ -282,7 +282,7 @@ class PostgresIdentityRepository:
             if payload.accessibility is not None:
                 preferences["accessibility"] = payload.accessibility
             row = await connection.fetchrow(
-                """update public.profiles
+                """update bighead.profiles
                       set locale = coalesce($2, locale), timezone = coalesce($3, timezone),
                           preferences = $4::jsonb
                     where id = $1
@@ -315,11 +315,11 @@ class PostgresIdentityRepository:
         try:
             async with self.database.privileged() as connection:
                 row = await connection.fetchrow(
-                    """insert into public.organization_invites
+                    """insert into bighead.organization_invites
                        (organization_id, email, role, token_hash, invited_by, expires_at)
                      select $1, $2, $3, $4, $5, $6
                       where exists (
-                        select 1 from public.organization_members
+                        select 1 from bighead.organization_members
                          where organization_id = $1 and user_id = $5
                            and status = 'active' and role in ('owner', 'admin')
                       )
@@ -335,11 +335,11 @@ class PostgresIdentityRepository:
             async with self.database.privileged() as connection:
                 row = await connection.fetchrow(
                     """select i.id, i.email::text, i.role::text, i.expires_at
-                         from public.organization_invites i
+                         from bighead.organization_invites i
                         where i.organization_id = $1 and i.email = $2
                           and i.accepted_at is null and i.revoked_at is null
                           and exists (
-                            select 1 from public.organization_members m
+                            select 1 from bighead.organization_members m
                              where m.organization_id = i.organization_id and m.user_id = $3
                                and m.status = 'active' and m.role in ('owner', 'admin')
                           )""",
@@ -362,7 +362,7 @@ class PostgresIdentityRepository:
         async with self.database.privileged() as connection:
             row = await connection.fetchrow(
                 """select email::text, expires_at, accepted_at, revoked_at
-                     from public.organization_invites where token_hash = $1""",
+                     from bighead.organization_invites where token_hash = $1""",
                 _token_hash(token),
             )
         _validate_invite(row)
@@ -375,21 +375,21 @@ class PostgresIdentityRepository:
             row = await connection.fetchrow(
                 """select id, organization_id, email::text, role::text, expires_at,
                           accepted_at, revoked_at
-                     from public.organization_invites where token_hash = $1 for update""",
+                     from bighead.organization_invites where token_hash = $1 for update""",
                 _token_hash(token),
             )
             _validate_invite(row)
             if cast(str, row["email"]).casefold() != email.casefold():
                 raise HTTPException(status_code=409, detail="Invite email does not match session")
             await connection.execute(
-                """insert into public.profiles(id, display_name)
+                """insert into bighead.profiles(id, display_name)
                      values ($1, $2) on conflict (id) do update
                        set display_name = excluded.display_name""",
                 user_id,
                 full_name,
             )
             await connection.execute(
-                """insert into public.organization_members
+                """insert into bighead.organization_members
                        (organization_id, user_id, role, status, joined_at)
                      values ($1, $2, $3, 'active', now())
                      on conflict (organization_id, user_id) do update
@@ -400,7 +400,7 @@ class PostgresIdentityRepository:
                 row["role"],
             )
             await connection.execute(
-                "update public.organization_invites set accepted_at = now() where id = $1",
+                "update bighead.organization_invites set accepted_at = now() where id = $1",
                 row["id"],
             )
         return Membership(
@@ -417,11 +417,11 @@ class PostgresIdentityRepository:
         try:
             async with self.database.privileged() as connection:
                 row = await connection.fetchrow(
-                    """update public.organization_members
+                    """update bighead.organization_members
                       set role = coalesce($3, role), status = coalesce($4, status)
                     where organization_id = $1 and user_id = $2
                       and exists (
-                        select 1 from public.organization_members actor
+                        select 1 from bighead.organization_members actor
                          where actor.organization_id = $1 and actor.user_id = $5
                            and actor.status = 'active' and actor.role in ('owner', 'admin')
                       )
@@ -435,7 +435,7 @@ class PostgresIdentityRepository:
                 if row:
                     changes = json.dumps({"role": row["role"], "status": row["status"]})
                     await connection.execute(
-                        """insert into public.event_outbox(
+                        """insert into bighead.event_outbox(
                                organization_id,event_type,aggregate_type,aggregate_id,payload)
                            values($1,'memberships.updated','membership',$2,$3::jsonb)""",
                         organization_id,
@@ -443,7 +443,7 @@ class PostgresIdentityRepository:
                         changes,
                     )
                     await connection.execute(
-                        """insert into public.audit_log(
+                        """insert into bighead.audit_log(
                                organization_id,actor_user_id,actor_type,action,resource_type,
                                resource_id,risk_level,changes_redacted)
                            values($1,$2,'user','membership.updated','membership',$3,'high',$4::jsonb)""",

@@ -19,7 +19,7 @@ class DiscoveryRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             if "rooms" in payload.scopes:
                 rows = await conn.fetch(
-                    """select id,name as title,description,created_at from public.rooms
+                    """select id,name as title,description,created_at from bighead.rooms
                         where organization_id=$1 and (name ilike $2 escape '\\'
                            or coalesce(description,'') ilike $2 escape '\\')
                         order by created_at desc limit $3""",
@@ -30,7 +30,7 @@ class DiscoveryRepository:
                 groups.append({"scope": "rooms", "items": [dict(row) for row in rows]})
             if "messages" in payload.scopes:
                 rows = await conn.fetch(
-                    """select id,room_id,body as title,created_at from public.messages
+                    """select id,room_id,body as title,created_at from bighead.messages
                         where organization_id=$1 and body ilike $2 escape '\\'
                         order by created_at desc limit $3""",
                     organization_id,
@@ -40,7 +40,7 @@ class DiscoveryRepository:
                 groups.append({"scope": "messages", "items": [dict(row) for row in rows]})
             if "tasks" in payload.scopes:
                 rows = await conn.fetch(
-                    """select id,title,objective as description,status,created_at from public.tasks
+                    """select id,title,objective as description,status,created_at from bighead.tasks
                         where organization_id=$1 and (title ilike $2 escape '\\'
                            or objective ilike $2 escape '\\')
                         order by created_at desc limit $3""",
@@ -66,7 +66,7 @@ class DiscoveryRepository:
         async with self.database.authenticated(user_id, organization_id) as conn:
             rows = await conn.fetch(
                 """select id,kind,title,body,resource_type,resource_id,read_at,created_at
-                     from public.notifications where organization_id=$1 and user_id=$2
+                     from bighead.notifications where organization_id=$1 and user_id=$2
                        and (not $3::boolean or read_at is null)
                      order by created_at desc,id desc limit $4""",
                 organization_id,
@@ -75,7 +75,7 @@ class DiscoveryRepository:
                 limit + 1,
             )
             unread_count = await conn.fetchval(
-                """select count(*) from public.notifications
+                """select count(*) from bighead.notifications
                     where organization_id=$1 and user_id=$2 and read_at is null""",
                 organization_id,
                 user_id,
