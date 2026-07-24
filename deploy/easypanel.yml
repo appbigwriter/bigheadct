@@ -49,6 +49,10 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - sistemas_bigheadct_web
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -100,6 +104,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - sistemas_bigheadct_api
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
