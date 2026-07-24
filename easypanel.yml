@@ -119,7 +119,7 @@ services:
       default:
         aliases:
           - sistemas_bigheadct_api
-      tools_default:
+      tools_supabase_default:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bighead_api.rule=Host(`bighead-api.fbr.news`)"
@@ -192,7 +192,7 @@ services:
         condition: service_healthy
     networks:
       - default
-      - tools_default
+      - tools_supabase_default
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -304,5 +304,5 @@ volumes:
   anythingllm_storage:
 
 networks:
-  tools_default:
+  tools_supabase_default:
     external: true
