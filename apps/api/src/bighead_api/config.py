@@ -121,7 +121,6 @@ class Settings(BaseSettings):
         remote_urls = {
             "APP_URL": str(self.app_url),
             "API_URL": str(self.api_url),
-            "SUPABASE_URL": str(self.supabase_url),
         }
         if self.supabase_public_url is not None:
             remote_urls["SUPABASE_PUBLIC_URL"] = str(self.supabase_public_url)
@@ -133,6 +132,11 @@ class Settings(BaseSettings):
                 or "127.0.0.1" in lowered
             ):
                 raise ValueError(f"{name} must be a non-local HTTPS URL in {self.app_env}.")
+        
+        # SUPABASE_URL may be internal in Easypanel (e.g. http://tools_supabase_kong:8000/)
+        supa_val = str(self.supabase_url).lower()
+        if not supa_val.startswith("http://") and not supa_val.startswith("https://"):
+            raise ValueError(f"SUPABASE_URL must be an HTTP/HTTPS URL.")
 
         origins = [str(origin).rstrip("/") for origin in self.cors_origins]
         if not origins or any(

@@ -167,16 +167,9 @@ class WorkerSettings(BaseSettings):
                 or "placeholder" in anything_key.lower()
             ):
                 raise ValueError("A production API key is required for AnythingLLM.")
-        for name, value in {
-            "SUPABASE_URL": str(self.supabase_url),
-        }.items():
-            lowered = value.lower()
-            if (
-                not lowered.startswith("https://")
-                or "localhost" in lowered
-                or "127.0.0.1" in lowered
-            ):
-                raise ValueError(f"{name} must be a non-local HTTPS URL in {self.app_env}.")
+        supa_val = str(self.supabase_url).lower()
+        if not supa_val.startswith("http://") and not supa_val.startswith("https://"):
+            raise ValueError(f"SUPABASE_URL must be an HTTP/HTTPS URL.")
         redis_url = self.redis_url.get_secret_value()
         parsed_redis = urlparse(redis_url)
         redis_host = (parsed_redis.hostname or "").lower()
