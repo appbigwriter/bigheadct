@@ -119,6 +119,7 @@ services:
       default:
         aliases:
           - sistemas_bigheadct_api
+      tools_default:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bighead_api.rule=Host(`bighead-api.fbr.news`)"
@@ -189,6 +190,9 @@ services:
         condition: service_healthy
       hermes:
         condition: service_healthy
+    networks:
+      - default
+      - tools_default
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -298,4 +302,7 @@ volumes:
   redis_data:
   clamav_db:
   anythingllm_storage:
-#
+
+networks:
+  tools_default:
+    external: true
