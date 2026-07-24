@@ -58,6 +58,12 @@ services:
       default:
         aliases:
           - sistemas_bigheadct_web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bighead_web.rule=Host(`bighead.fbr.news`)"
+      - "traefik.http.routers.bighead_web.entrypoints=websecure"
+      - "traefik.http.routers.bighead_web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bighead_web.loadbalancer.server.port=3000"
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -113,6 +119,12 @@ services:
       default:
         aliases:
           - sistemas_bigheadct_api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bighead_api.rule=Host(`bighead-api.fbr.news`)"
+      - "traefik.http.routers.bighead_api.entrypoints=websecure"
+      - "traefik.http.routers.bighead_api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bighead_api.loadbalancer.server.port=8000"
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
